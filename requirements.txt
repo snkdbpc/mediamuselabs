@@ -1,0 +1,10 @@
+# MediaMind UI (Streamlit frontend)
+#
+# The AI, storage, clustering, and social-copy dependencies belong to the
+# mediamind_ai backend service.  Keep this file limited to dependencies used
+# by the Streamlit client itself.
+
+streamlit==1.58.0
+pillow-heif==1.4.0
+Pillow==12.2.0
+requests==2.34.2
