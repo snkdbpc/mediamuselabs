@@ -79,13 +79,67 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleFacebookConnect = async () => {
+  const [shareFeedback, setShareFeedback] = useState<Record<string, string>>({});
+
+  const showShareFeedback = (clusterId: string, message: string) => {
+    setShareFeedback((prev) => ({ ...prev, [clusterId]: message }));
+    setTimeout(() => {
+      setShareFeedback((prev) => {
+        const next = { ...prev };
+        delete next[clusterId];
+        return next;
+      });
+    }, 4000);
+  };
+
+  const handleShareFacebook = async (clusterId: string, postText?: string) => {
+    if (postText) {
+      navigator.clipboard.writeText(postText);
+    }
     const url = await getFacebookLoginUrl(connectionId);
     if (url) {
       window.open(url, '_blank', 'width=600,height=700');
+      showShareFeedback(clusterId, 'Facebook post copied! Opening Facebook...');
     } else {
-      alert('Facebook login service currently unavailable.');
+      const shareUrl = postText
+        ? `https://www.facebook.com/sharer/sharer.php?quote=${encodeURIComponent(postText)}`
+        : 'https://www.facebook.com/';
+      window.open(shareUrl, '_blank', 'width=600,height=600');
+      showShareFeedback(clusterId, 'Facebook post copied! Opening Facebook...');
     }
+  };
+
+  const handleShareInstagram = (clusterId: string, captionText?: string, hashtags?: string[]) => {
+    if (!captionText) return;
+    const fullText =
+      hashtags && hashtags.length > 0
+        ? `${captionText}\n\n${hashtags.join(' ')}`
+        : captionText;
+
+    navigator.clipboard.writeText(fullText);
+    window.open('https://www.instagram.com/', '_blank');
+    showShareFeedback(clusterId, 'Instagram caption copied! Paste into your Instagram post.');
+  };
+
+  const handleShareTwitter = (clusterId: string, tweetText?: string) => {
+    if (!tweetText) return;
+    navigator.clipboard.writeText(tweetText);
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+    window.open(tweetUrl, '_blank', 'width=600,height=500');
+    showShareFeedback(clusterId, 'Opening X (Twitter) with your post ready...');
+  };
+
+  const handleShareHashtags = (clusterId: string, hashtags?: string[]) => {
+    if (!hashtags || hashtags.length === 0) return;
+    const text = hashtags.join(' ');
+    navigator.clipboard.writeText(text);
+    showShareFeedback(clusterId, 'All hashtags copied to clipboard!');
+  };
+
+  const handleShareSeo = (clusterId: string, seoText?: string) => {
+    if (!seoText) return;
+    navigator.clipboard.writeText(seoText);
+    showShareFeedback(clusterId, 'SEO Alt Text copied to clipboard!');
   };
 
   // Export All Posts as .txt
@@ -577,14 +631,75 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
               </div>
             </div>
 
-            {/* Direct Social Share Action */}
-            <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
-              <button
-                onClick={handleFacebookConnect}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all shadow-md"
-              >
-                <Facebook className="w-4 h-4" /> Share to Facebook
-              </button>
+            {/* Direct Social Share Action for Active Platform */}
+            <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {activeTabKey === 'fb' && (
+                  <button
+                    onClick={() => handleShareFacebook(cId, post.facebook_post)}
+                    disabled={!post.facebook_post}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all shadow-md shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Facebook className="w-4 h-4" /> Share to Facebook
+                  </button>
+                )}
+
+                {activeTabKey === 'ig' && (
+                  <button
+                    onClick={() => handleShareInstagram(cId, post.instagram_caption, post.hashtags)}
+                    disabled={!post.instagram_caption}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 text-white font-semibold text-xs transition-all shadow-md shadow-pink-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Instagram className="w-4 h-4" /> Share to Instagram
+                  </button>
+                )}
+
+                {activeTabKey === 'tw' && (
+                  <button
+                    onClick={() => handleShareTwitter(cId, post.twitter_post)}
+                    disabled={!post.twitter_post}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 hover:border-sky-500/50 font-semibold text-xs transition-all shadow-md shadow-slate-900/40 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Twitter className="w-4 h-4 text-sky-400" /> Share to X (Twitter)
+                  </button>
+                )}
+
+                {activeTabKey === 'hash' && (
+                  <button
+                    onClick={() => handleShareHashtags(cId, post.hashtags)}
+                    disabled={!post.hashtags || post.hashtags.length === 0}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-purple-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Hash className="w-4 h-4" /> Copy All Hashtags
+                  </button>
+                )}
+
+                {activeTabKey === 'seo' && (
+                  <button
+                    onClick={() => handleShareSeo(cId, post.seo_alt_text)}
+                    disabled={!post.seo_alt_text}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Eye className="w-4 h-4" /> Copy SEO Alt Text
+                  </button>
+                )}
+
+                <span className="text-[11px] text-slate-400">
+                  {activeTabKey === 'fb' && 'Opens Facebook and copies post text'}
+                  {activeTabKey === 'ig' && 'Copies caption & hashtags and opens Instagram'}
+                  {activeTabKey === 'tw' && 'Opens Twitter/X compose with post pre-filled'}
+                  {activeTabKey === 'hash' && 'Copies all optimized hashtags'}
+                  {activeTabKey === 'seo' && 'Copies SEO alt text to clipboard'}
+                </span>
+              </div>
+
+              {/* Action feedback message */}
+              {shareFeedback[cId] && (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  <span>{shareFeedback[cId]}</span>
+                </div>
+              )}
             </div>
           </div>
         );
