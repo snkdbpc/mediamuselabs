@@ -22,6 +22,10 @@ import {
   Hash,
   Eye,
   Loader2,
+  MapPin,
+  Calendar,
+  Camera,
+  ExternalLink,
 } from 'lucide-react';
 import { getFacebookLoginUrl } from '../lib/api';
 
@@ -54,7 +58,6 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
 }) => {
   const [selectedBestN, setSelectedBestN] = useState<Record<string, number>>({});
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [fbLoginUrl, setFbLoginUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Record<string, 'fb' | 'ig' | 'tw' | 'hash' | 'seo'>>({});
 
   // Default selected N per cluster
@@ -79,7 +82,6 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
   const handleFacebookConnect = async () => {
     const url = await getFacebookLoginUrl(connectionId);
     if (url) {
-      setFbLoginUrl(url);
       window.open(url, '_blank', 'width=600,height=700');
     } else {
       alert('Facebook login service currently unavailable.');
@@ -126,7 +128,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
           <div className="flex items-center justify-between text-xs font-semibold text-indigo-300">
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-              {streamProgress.text || 'Generating social copy with Florence-2 AI...'}
+              {streamProgress.text || 'Generating social copy with AI...'}
             </span>
             <span>
               {streamProgress.completed} of {streamProgress.total} completed
@@ -194,7 +196,9 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
             ? reps.slice(0, currentBestN).map((rep: any, rank: number) => {
                 let imgIdx = rep.image_idx;
                 if (imgIdx === undefined && rep.filename) {
-                  const matchIdx = files.findIndex((f) => f.name === rep.filename);
+                  const matchIdx = files.findIndex(
+                    (f) => f.name === rep.filename || f.file.name === rep.filename || f.originalName === rep.filename
+                  );
                   if (matchIdx !== -1) imgIdx = matchIdx;
                 }
                 if (imgIdx === undefined) {
@@ -305,13 +309,52 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                         </div>
 
                         <div className="flex items-center justify-between px-1 text-xs">
-                          <span className="text-slate-300 truncate max-w-[130px] font-medium">
-                            {fileItem?.name || `File ${imgIdx + 1}`}
+                          <span className="text-slate-300 truncate max-w-[130px] font-medium" title={fileItem?.originalName || fileItem?.name}>
+                            {fileItem?.originalName || fileItem?.name || `File ${imgIdx + 1}`}
                           </span>
                           <span className="font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 text-xs">
                             {(qualityScore * 100).toFixed(0)}% Score
                           </span>
                         </div>
+
+                        {fileItem?.exif && (
+                          <div className="px-1 pt-1 border-t border-slate-800 text-[10px] space-y-1 text-slate-400">
+                            {(fileItem.exif.make || fileItem.exif.model) && (
+                              <div className="flex items-center gap-1 truncate text-slate-300">
+                                <Camera className="w-2.5 h-2.5 text-indigo-400 flex-shrink-0" />
+                                <span className="truncate">
+                                  {[fileItem.exif.make, fileItem.exif.model].filter(Boolean).join(' ')}
+                                </span>
+                              </div>
+                            )}
+
+                            {fileItem.exif.formattedDate && (
+                              <div className="flex items-center gap-1 truncate text-purple-300">
+                                <Calendar className="w-2.5 h-2.5 text-purple-400 flex-shrink-0" />
+                                <span className="truncate">{fileItem.exif.formattedDate}</span>
+                              </div>
+                            )}
+
+                            {fileItem.exif.formattedCoordinates && (
+                              <div className="flex items-center justify-between gap-1 text-emerald-300">
+                                <div className="flex items-center gap-1 truncate">
+                                  <MapPin className="w-2.5 h-2.5 text-emerald-400 flex-shrink-0" />
+                                  <span className="truncate">{fileItem.exif.formattedCoordinates}</span>
+                                </div>
+                                {fileItem.exif.googleMapsUrl && (
+                                  <a
+                                    href={fileItem.exif.googleMapsUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[9px] text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 underline flex-shrink-0"
+                                  >
+                                    Maps <ExternalLink className="w-2 h-2" />
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

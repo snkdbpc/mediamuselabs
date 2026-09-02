@@ -117,8 +117,8 @@ export default function Home() {
       const newAlbumId = uploadRes.album_id;
       setAlbumId(newAlbumId);
 
-      // 2. Build index map
-      const filenames = activeItems.map((item) => item.name);
+      // 2. Build index map matching uploaded files
+      const filenames = activeItems.map((item) => item.file.name);
       const indexMap: Record<string, number> = {};
       filenames.forEach((name, idx) => {
         indexMap[name] = idx;

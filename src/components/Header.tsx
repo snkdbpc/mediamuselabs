@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Camera, CheckCircle2, Sparkles } from 'lucide-react';
+import { CheckCircle2, Sparkles } from 'lucide-react';
 import { CreatorProfile, GoogleAccountStatus } from '../types/mediamind';
 import { getGoogleLoginUrl } from '../lib/api';
 
@@ -33,16 +33,20 @@ export const Header: React.FC<HeaderProps> = ({ creatorProfile, googleStatus, co
     <header className="relative z-10 w-full mb-8 pt-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 glass-card border border-slate-800/80 shadow-2xl">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-            <Camera className="w-8 h-8 text-white" />
+          <div className="relative w-14 h-14 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/20 border border-indigo-500/30 flex-shrink-0 bg-slate-900">
+            <img
+              src="/mediamuselabs_logo.png"
+              alt="Media Muse Labs Logo"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <h1 className="text-3xl font-extrabold tracking-tight text-gradient">
                 Media Muse Labs
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Pro Studio
+                <Sparkles className="w-3 h-3 text-indigo-400" /> Powered by AI
               </span>
             </div>
             <p className="text-slate-400 text-sm mt-1">

@@ -54,11 +54,46 @@ export interface GoogleAccountStatus {
   picture?: string;
 }
 
+export interface ExifInfo {
+  // Device & Camera
+  make?: string;
+  model?: string;
+  lensModel?: string;
+  software?: string;
+
+  // Time & Date
+  dateTimeOriginal?: string;
+  createDate?: string;
+  modifyDate?: string;
+  formattedDate?: string;
+
+  // GPS & Location
+  latitude?: number;
+  longitude?: number;
+  altitude?: number;
+  formattedCoordinates?: string;
+  googleMapsUrl?: string;
+
+  // Camera Settings & Exposure
+  iso?: number;
+  fNumber?: number;
+  exposureTime?: number | string;
+  focalLength?: number;
+  flash?: string | number;
+  whiteBalance?: string | number;
+
+  // Image Dimensions
+  imageWidth?: number;
+  imageHeight?: number;
+}
+
 export interface UploadedFileItem {
   id: string;
   file: File;
   previewUrl: string;
   name: string;
+  originalName?: string;
   size: number;
   included: boolean;
+  exif?: ExifInfo;
 }

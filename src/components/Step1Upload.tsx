@@ -1,9 +1,28 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Image as ImageIcon, RotateCcw, Rocket, Info, AlertTriangle, CheckSquare, Square, Lock, Loader2 } from 'lucide-react';
+import {
+  Upload,
+  Image as ImageIcon,
+  RotateCcw,
+  Rocket,
+  Info,
+  AlertTriangle,
+  CheckSquare,
+  Square,
+  Lock,
+  Loader2,
+  MapPin,
+  Calendar,
+  Camera,
+  ExternalLink,
+  X,
+  Sliders,
+  Maximize2,
+} from 'lucide-react';
 import { UploadedFileItem } from '../types/mediamind';
 import { getGoogleLoginUrl, compressImageToJpeg } from '../lib/api';
+import { parseExifFromFile } from '../lib/exif';
 
 interface Step1UploadProps {
   files: UploadedFileItem[];
@@ -34,6 +53,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
 }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState<boolean>(false);
+  const [selectedExifItem, setSelectedExifItem] = useState<UploadedFileItem | null>(null);
   const googleLoginUrl = getGoogleLoginUrl(connectionId);
 
   const handleGoogleLogin = (e: React.MouseEvent) => {
@@ -74,28 +94,34 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
 
     setIsCompressing(true);
     try {
-      // Compress and convert all images to JPEG (max 1024px, 80% quality)
+      // Extract EXIF metadata from original files and compress to JPEG preserving EXIF
       const newItems: UploadedFileItem[] = await Promise.all(
         selectedFiles.map(async (file, idx) => {
+          // Parse rich EXIF metadata from the original file (GPS, time, camera, device)
+          const exifInfo = await parseExifFromFile(file);
+
+          // Compress image while preserving EXIF binary payload
           const compressedFile = await compressImageToJpeg(file, 1024, 0.8);
+
           return {
             id: `${compressedFile.name}_${Date.now()}_${idx}`,
             file: compressedFile,
             previewUrl: URL.createObjectURL(compressedFile),
             name: compressedFile.name,
+            originalName: file.name,
             size: compressedFile.size,
             included: true,
+            exif: exifInfo,
           };
         })
       );
 
       onFilesChange([...files, ...newItems]);
     } catch (err: any) {
-      console.error('Image compression failed:', err);
+      console.error('Image processing failed:', err);
       setErrorMsg('Failed to process one or more images. Please try again.');
     } finally {
       setIsCompressing(false);
-      // Reset input value so re-selecting same files triggers change event
       e.target.value = '';
     }
   };
@@ -108,6 +134,19 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
 
   const activeFiles = files.filter((f) => f.included);
   const excludedCount = files.length - activeFiles.length;
+
+  // Compute overall EXIF statistics
+  const filesWithGps = files.filter((f) => f.exif?.formattedCoordinates);
+  const detectedDevices = Array.from(
+    new Set(
+      files
+        .map((f) => (f.exif ? [f.exif.make, f.exif.model].filter(Boolean).join(' ') : ''))
+        .filter(Boolean)
+    )
+  );
+  const detectedDates = Array.from(
+    new Set(files.map((f) => f.exif?.formattedDate).filter(Boolean))
+  );
 
   return (
     <div className="space-y-6">
@@ -142,7 +181,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               <div>
                 <p className="font-bold text-sm text-amber-300">Google Account Required to Upload</p>
                 <p className="text-amber-200/80 mt-1">
-                  Media Muse Labs API requires an authenticated Google session before processing albums.
+                  Media Muse Labs requires an authenticated Google session before processing albums.
                 </p>
               </div>
             </div>
@@ -203,7 +242,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
             <div>
               <p className="font-semibold text-slate-200 text-base">
                 {isCompressing ? (
-                  'Optimizing & compressing images to JPEG (max 1024px @ 80%)...'
+                  'Processing & preparing images...'
                 ) : isSigned ? (
                   <>
                     Drag and drop your photos here, or <span className="text-indigo-400 underline">browse</span>
@@ -213,7 +252,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                 )}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                Auto-compressed to JPEG (max 1024px, 80% quality) • Max {MAX_UPLOAD_IMAGES} images (up to {MAX_UPLOAD_SIZE_MB}MB)
+                Max {MAX_UPLOAD_IMAGES} images (up to {MAX_UPLOAD_SIZE_MB}MB) • EXIF, GPS & timestamps preserved
               </p>
             </div>
           </div>
@@ -229,48 +268,152 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
       {/* Preview Grid */}
       {files.length > 0 && (
         <div className="glass-card p-6 border border-slate-800 shadow-xl space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-bold text-slate-100">🖼️ Preview Album ({files.length} images)</h3>
               <p className="text-xs text-slate-400">
-                All photos optimized to JPEG. Uncheck photos to exclude them from visual clustering.
+                Uncheck photos to exclude them from visual clustering. Click EXIF tags to inspect full metadata.
               </p>
             </div>
-            <span className="text-xs font-semibold px-3 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+            <span className="text-xs font-semibold px-3 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 self-start sm:self-auto">
               {activeFiles.length} included
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-4">
-            {files.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => toggleInclude(item.id)}
-                className={`relative group rounded-xl overflow-hidden border cursor-pointer transition-all duration-200 ${
-                  item.included
-                    ? 'border-indigo-500/50 bg-slate-900/60 shadow-md shadow-indigo-500/10'
-                    : 'border-slate-800 bg-slate-950/80 opacity-40 grayscale'
-                }`}
-              >
-                <div className="aspect-square relative overflow-hidden bg-slate-950">
-                  <img
-                    src={item.previewUrl}
-                    alt={item.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute top-2 right-2 z-10">
-                    {item.included ? (
-                      <CheckSquare className="w-5 h-5 text-indigo-400 bg-slate-900/90 rounded" />
+          {/* Album Metadata Summary Banner */}
+          {(filesWithGps.length > 0 || detectedDevices.length > 0 || detectedDates.length > 0) && (
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-indigo-500/30 shadow-md flex flex-wrap items-center gap-4 text-xs text-slate-300">
+              <div className="flex items-center gap-1.5 font-bold text-indigo-300">
+                <Camera className="w-4 h-4 text-indigo-400" />
+                <span>EXIF Preserved:</span>
+              </div>
+
+              {filesWithGps.length > 0 && (
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold">
+                  <MapPin className="w-3.5 h-3.5" /> {filesWithGps.length} with GPS
+                </span>
+              )}
+
+              {detectedDevices.length > 0 && (
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-200">
+                  <Camera className="w-3.5 h-3.5" /> {detectedDevices.join(' • ')}
+                </span>
+              )}
+
+              {detectedDates.length > 0 && (
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-200">
+                  <Calendar className="w-3.5 h-3.5" /> {detectedDates[0]}
+                  {detectedDates.length > 1 ? ` (+${detectedDates.length - 1} dates)` : ''}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Image Grid with EXIF Badges */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+            {files.map((item) => {
+              const exif = item.exif;
+              const hasExif = !!exif;
+              const deviceLabel = exif ? [exif.make, exif.model].filter(Boolean).join(' ') : null;
+
+              return (
+                <div
+                  key={item.id}
+                  className={`relative group rounded-2xl overflow-hidden border transition-all duration-200 ${
+                    item.included
+                      ? 'border-indigo-500/40 bg-slate-900/80 shadow-md shadow-indigo-500/10'
+                      : 'border-slate-800 bg-slate-950/80 opacity-40 grayscale'
+                  }`}
+                >
+                  <div
+                    onClick={() => toggleInclude(item.id)}
+                    className="aspect-square relative overflow-hidden bg-slate-950 cursor-pointer"
+                  >
+                    <img
+                      src={item.previewUrl}
+                      alt={item.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+
+                    {/* Include checkbox */}
+                    <div className="absolute top-2 right-2 z-10">
+                      {item.included ? (
+                        <CheckSquare className="w-5 h-5 text-indigo-400 bg-slate-900/90 rounded" />
+                      ) : (
+                        <Square className="w-5 h-5 text-slate-400 bg-slate-900/90 rounded" />
+                      )}
+                    </div>
+
+                    {/* GPS Tag Overlay on thumbnail */}
+                    {exif?.formattedCoordinates && (
+                      <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-slate-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                        <MapPin className="w-3 h-3 text-emerald-400" /> GPS
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Content & EXIF Badges */}
+                  <div className="p-3 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="truncate font-semibold text-slate-200 text-xs flex-1 mr-2" title={item.originalName || item.name}>
+                        {item.originalName || item.name}
+                      </div>
+
+                      {hasExif && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedExifItem(item);
+                          }}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold transition-colors flex-shrink-0"
+                          title="View complete EXIF metadata"
+                        >
+                          <Maximize2 className="w-2.5 h-2.5" /> EXIF
+                        </button>
+                      )}
+                    </div>
+
+                    {/* EXIF Metadata Pill summary */}
+                    {exif ? (
+                      <div className="space-y-1 text-[11px] text-slate-400">
+                        {deviceLabel && (
+                          <div className="flex items-center gap-1.5 truncate text-slate-300">
+                            <Camera className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+                            <span className="truncate">{deviceLabel}</span>
+                          </div>
+                        )}
+
+                        {exif.formattedDate && (
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Calendar className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                            <span className="truncate">{exif.formattedDate}</span>
+                          </div>
+                        )}
+
+                        {exif.formattedCoordinates && (
+                          <div className="flex items-center gap-1.5 truncate text-emerald-300">
+                            <MapPin className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                            <a
+                              href={exif.googleMapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="truncate hover:underline flex items-center gap-1"
+                            >
+                              <span>{exif.formattedCoordinates}</span>
+                              <ExternalLink className="w-2.5 h-2.5 flex-shrink-0" />
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     ) : (
-                      <Square className="w-5 h-5 text-slate-400 bg-slate-900/90 rounded" />
+                      <div className="text-[10px] text-slate-500 italic">No EXIF data found</div>
                     )}
                   </div>
                 </div>
-                <div className="p-2 text-[11px] truncate text-slate-300 font-medium">
-                  {item.name}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {excludedCount > 0 && (
@@ -293,7 +436,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               className="w-full glass-input rounded-xl p-3 text-xs md:text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
             />
             <p className="text-[11px] text-slate-400 mt-1">
-              A short summary helps the AI models extract precise context for social copy captions.
+              A short summary helps AI extract precise context for your social posts.
             </p>
           </div>
 
@@ -316,6 +459,174 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                 </>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Full EXIF Metadata Modal */}
+      {selectedExifItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setSelectedExifItem(null)}
+        >
+          <div
+            className="glass-card max-w-xl w-full p-6 border border-slate-700 bg-slate-900/95 shadow-2xl space-y-5 rounded-2xl relative max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-lg font-bold text-slate-100">EXIF Metadata Inspector</h3>
+              </div>
+              <button
+                onClick={() => setSelectedExifItem(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <img
+                src={selectedExifItem.previewUrl}
+                alt={selectedExifItem.name}
+                className="w-24 h-24 rounded-xl object-cover border border-slate-700 bg-slate-950 flex-shrink-0"
+              />
+              <div className="truncate">
+                <h4 className="font-bold text-slate-200 text-sm truncate">{selectedExifItem.originalName || selectedExifItem.name}</h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Size: {(selectedExifItem.size / 1024).toFixed(1)} KB
+                </p>
+                {selectedExifItem.exif?.imageWidth && selectedExifItem.exif?.imageHeight && (
+                  <p className="text-xs text-slate-400">
+                    Dimensions: {selectedExifItem.exif.imageWidth} × {selectedExifItem.exif.imageHeight} px
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {selectedExifItem.exif ? (
+              <div className="space-y-4 text-xs">
+                {/* Device & Camera */}
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                  <div className="font-bold text-indigo-300 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <Camera className="w-3.5 h-3.5" /> Camera & Device
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-slate-300">
+                    <div>
+                      <span className="text-slate-500 block">Camera Make:</span>
+                      <span className="font-medium">{selectedExifItem.exif.make || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Model:</span>
+                      <span className="font-medium">{selectedExifItem.exif.model || '—'}</span>
+                    </div>
+                    {selectedExifItem.exif.lensModel && (
+                      <div className="col-span-2">
+                        <span className="text-slate-500 block">Lens:</span>
+                        <span className="font-medium">{selectedExifItem.exif.lensModel}</span>
+                      </div>
+                    )}
+                    {selectedExifItem.exif.software && (
+                      <div className="col-span-2">
+                        <span className="text-slate-500 block">Software:</span>
+                        <span className="font-medium">{selectedExifItem.exif.software}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* GPS / Location */}
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                  <div className="font-bold text-emerald-300 flex items-center justify-between text-xs uppercase tracking-wider">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5" /> GPS Location
+                    </span>
+                    {selectedExifItem.exif.googleMapsUrl && (
+                      <a
+                        href={selectedExifItem.exif.googleMapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold underline"
+                      >
+                        Open Google Maps <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-slate-300">
+                    <div>
+                      <span className="text-slate-500 block">Coordinates:</span>
+                      <span className="font-medium">
+                        {selectedExifItem.exif.formattedCoordinates || '—'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Altitude:</span>
+                      <span className="font-medium">
+                        {selectedExifItem.exif.altitude !== undefined
+                          ? `${Math.round(selectedExifItem.exif.altitude)} m`
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Date & Time */}
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                  <div className="font-bold text-purple-300 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <Calendar className="w-3.5 h-3.5" /> Date & Time
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-slate-300">
+                    <div className="col-span-2">
+                      <span className="text-slate-500 block">Date Taken:</span>
+                      <span className="font-medium">{selectedExifItem.exif.formattedDate || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Exposure Settings */}
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                  <div className="font-bold text-amber-300 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <Sliders className="w-3.5 h-3.5" /> Exposure Settings
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 text-slate-300">
+                    <div>
+                      <span className="text-slate-500 block">ISO:</span>
+                      <span className="font-medium">{selectedExifItem.exif.iso || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Aperture:</span>
+                      <span className="font-medium">
+                        {selectedExifItem.exif.fNumber ? `f/${selectedExifItem.exif.fNumber}` : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Shutter:</span>
+                      <span className="font-medium">{selectedExifItem.exif.exposureTime || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Focal Length:</span>
+                      <span className="font-medium">
+                        {selectedExifItem.exif.focalLength ? `${selectedExifItem.exif.focalLength}mm` : '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-6 text-center text-slate-400 text-xs bg-slate-950/50 rounded-xl">
+                No detailed EXIF metadata tags detected in this file.
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedExifItem(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

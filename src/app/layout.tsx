@@ -4,8 +4,12 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Media Muse Labs - Smart Visual Clustering & Multi-Platform Post Creation',
   description:
-    'Organize visual albums with SigLIP and Florence-2 AI models, cluster images intelligently, and generate multi-platform social media posts for Facebook, Instagram, and Twitter.',
-  keywords: ['Media Muse Labs', 'Media Muse', 'AI Clustering', 'Social Media Generator', 'Florence-2', 'SigLIP', 'Visual Storytelling'],
+    'Organize visual albums, cluster images intelligently, and generate multi-platform social media posts for Facebook, Instagram, and Twitter. Powered by AI.',
+  keywords: ['Media Muse Labs', 'Media Muse', 'AI Clustering', 'Social Media Generator', 'Visual Storytelling', 'Powered by AI'],
+  icons: {
+    icon: '/mediamuselabs_logo.png',
+    apple: '/mediamuselabs_logo.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

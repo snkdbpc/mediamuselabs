@@ -2,7 +2,18 @@
 
 import React from 'react';
 import { Cluster, UploadedFileItem } from '../types/mediamind';
-import { Edit3, Sparkles, ArrowLeft, Tag, MapPin, AlignLeft, Layers } from 'lucide-react';
+import {
+  Edit3,
+  Sparkles,
+  ArrowLeft,
+  Tag,
+  MapPin,
+  AlignLeft,
+  Layers,
+  Camera,
+  Calendar,
+  ExternalLink,
+} from 'lucide-react';
 
 interface Step2ChooseOrEditProps {
   currentStep: 'choose' | 'edit';
@@ -137,9 +148,12 @@ export const Step2ChooseOrEdit: React.FC<Step2ChooseOrEditProps> = ({
 
           <h4 className="text-base font-semibold text-slate-200">🖼️ Images in Cluster ({cluster.all_image_indices.length})</h4>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {cluster.all_image_indices.map((imgIdx) => {
               const fileItem = files[imgIdx];
+              const exif = fileItem?.exif;
+              const deviceLabel = exif ? [exif.make, exif.model].filter(Boolean).join(' ') : null;
+
               const imageDetail = (cluster.image_details || {})[imgIdx] || {
                 description: '',
                 tags: [],
@@ -147,21 +161,67 @@ export const Step2ChooseOrEdit: React.FC<Step2ChooseOrEditProps> = ({
               };
 
               return (
-                <div key={imgIdx} className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-3.5 space-y-3 shadow-md">
-                  <div className="aspect-[16/10] sm:h-48 md:h-52 w-full relative rounded-xl overflow-hidden bg-slate-950">
-                    {fileItem ? (
-                      <img src={fileItem.previewUrl} alt={fileItem.name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-600 text-sm">
-                        Photo #{imgIdx + 1}
+                <div key={imgIdx} className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3.5 shadow-md flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="aspect-[16/10] sm:h-48 md:h-52 w-full relative rounded-xl overflow-hidden bg-slate-950">
+                      {fileItem ? (
+                        <img src={fileItem.previewUrl} alt={fileItem.name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-600 text-sm">
+                          Photo #{imgIdx + 1}
+                        </div>
+                      )}
+
+                      {/* GPS tag overlay */}
+                      {exif?.formattedCoordinates && (
+                        <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-slate-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                          <MapPin className="w-3 h-3 text-emerald-400" /> GPS
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-sm font-semibold text-slate-200 truncate" title={fileItem?.originalName || fileItem?.name}>
+                      {fileItem?.originalName || fileItem?.name || `Image #${imgIdx + 1}`}
+                    </p>
+
+                    {/* Preserved EXIF Info Card */}
+                    {exif && (
+                      <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] space-y-1.5 text-slate-300">
+                        {deviceLabel && (
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Camera className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+                            <span className="truncate font-medium">{deviceLabel}</span>
+                          </div>
+                        )}
+                        {exif.formattedDate && (
+                          <div className="flex items-center gap-1.5 truncate text-slate-400">
+                            <Calendar className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                            <span className="truncate">{exif.formattedDate}</span>
+                          </div>
+                        )}
+                        {exif.formattedCoordinates && (
+                          <div className="flex items-center justify-between gap-1 text-emerald-300">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <MapPin className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                              <span className="truncate">{exif.formattedCoordinates}</span>
+                            </div>
+                            {exif.googleMapsUrl && (
+                              <a
+                                href={exif.googleMapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 underline flex-shrink-0"
+                              >
+                                Maps <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                  <p className="text-sm font-medium text-slate-200 truncate">
-                    {fileItem?.name || `Image #${imgIdx + 1}`}
-                  </p>
 
-                  <div className="space-y-3 text-xs">
+                  <div className="space-y-3 text-xs pt-1">
                     <div>
                       <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1">
                         <Tag className="w-3.5 h-3.5 text-purple-400" /> Image tags
@@ -193,16 +253,34 @@ export const Step2ChooseOrEdit: React.FC<Step2ChooseOrEditProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-pink-400" /> Image location
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-pink-400" /> Image location
+                        </label>
+                        {exif?.formattedCoordinates && !imageDetail.image_location && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleImageDetailChange(
+                                cluster.cluster_id,
+                                imgIdx,
+                                'image_location',
+                                exif.formattedCoordinates!
+                              )
+                            }
+                            className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20"
+                          >
+                            📍 Use GPS Location
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={imageDetail.image_location || ''}
                         onChange={(e) =>
                           handleImageDetailChange(cluster.cluster_id, imgIdx, 'image_location', e.target.value)
                         }
-                        placeholder="e.g. Main Viewpoint"
+                        placeholder="e.g. Bandhavgarh National Park"
                         className="w-full glass-input rounded-lg px-3 py-1.5 text-xs md:text-sm text-slate-200"
                       />
                     </div>

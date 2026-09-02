@@ -2,10 +2,10 @@ import {
   Cluster,
   CreatorProfile,
   GoogleAccountStatus,
-  RepresentativeImage,
   ScoredClusterMetadata,
   SocialPost,
 } from '../types/mediamind';
+import { preserveExifInJpeg } from './exif';
 
 const REMOTE_API_URL =
   process.env.NEXT_PUBLIC_MEDIAMUSELABS_API_URL ||
@@ -314,20 +314,31 @@ export async function compressImageToJpeg(
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
       canvas.toBlob(
-        (blob) => {
+        async (blob) => {
           if (!blob) {
             const fallbackFile = new File([sourceBlob], newFileName, {
               type: 'image/jpeg',
-              lastModified: Date.now(),
+              lastModified: file.lastModified || Date.now(),
             });
             resolve(fallbackFile);
             return;
           }
-          const compressedFile = new File([blob], newFileName, {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
-          resolve(compressedFile);
+          try {
+            // Preserve EXIF and metadata segments from source image
+            const finalBlob = await preserveExifInJpeg(file || sourceBlob, blob);
+            const compressedFile = new File([finalBlob], newFileName, {
+              type: 'image/jpeg',
+              lastModified: file.lastModified || Date.now(),
+            });
+            resolve(compressedFile);
+          } catch (exifErr) {
+            console.warn(`Failed to attach EXIF for ${file.name}:`, exifErr);
+            const compressedFile = new File([blob], newFileName, {
+              type: 'image/jpeg',
+              lastModified: file.lastModified || Date.now(),
+            });
+            resolve(compressedFile);
+          }
         },
         'image/jpeg',
         quality
@@ -339,7 +350,7 @@ export async function compressImageToJpeg(
       console.warn(`Unable to convert ${file.name} to JPEG via canvas:`, err);
       const fallbackFile = new File([sourceBlob], newFileName, {
         type: 'image/jpeg',
-        lastModified: Date.now(),
+        lastModified: file.lastModified || Date.now(),
       });
       resolve(fallbackFile);
     };

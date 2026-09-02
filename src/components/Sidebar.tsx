@@ -22,7 +22,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ profile, onChange }) => {
           <h2 className="text-lg font-bold text-slate-100">Creator Profile</h2>
         </div>
         <p className="text-xs text-slate-400 mb-6">
-          This profile guides every generated caption to match your authentic voice.
+          This profile guides every generated post to match your authentic voice.
         </p>
 
         <div className="space-y-4 text-xs">
@@ -121,9 +121,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ profile, onChange }) => {
           </div>
         </div>
 
-        <div className="mt-6 pt-4 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>AI Embedding: <strong className="text-slate-200">SigLIP</strong></span>
-          <span>AI Caption: <strong className="text-slate-200">Florence-2</strong></span>
+        <div className="mt-6 pt-4 border-t border-slate-800 text-xs text-indigo-300/80 flex items-center justify-center gap-1.5 font-medium">
+          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Powered by AI</span>
         </div>
       </div>
     </aside>
