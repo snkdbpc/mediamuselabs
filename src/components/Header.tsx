@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { CreatorProfile, GoogleAccountStatus } from '../types/mediamind';
 import { getGoogleLoginUrl } from '../lib/api';
+import logoImg from '../app/mediamuselabs_logo.png';
 
 interface HeaderProps {
   creatorProfile: CreatorProfile;
@@ -34,10 +36,11 @@ export const Header: React.FC<HeaderProps> = ({ creatorProfile, googleStatus, co
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 glass-card border border-slate-800/80 shadow-2xl">
         <div className="flex items-center gap-4">
           <div className="relative w-14 h-14 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/20 border border-indigo-500/30 flex-shrink-0 bg-slate-900">
-            <img
-              src="/mediamuselabs_logo.png"
+            <Image
+              src={logoImg}
               alt="Media Muse Labs Logo"
               className="w-full h-full object-cover"
+              priority
             />
           </div>
           <div>
