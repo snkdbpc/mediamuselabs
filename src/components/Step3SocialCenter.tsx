@@ -182,10 +182,37 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
         const currentBestN = selectedBestN[cId] || Math.min(3, totalImagesInCluster);
 
         // Representatives metadata
-        const metadata = scoredMetadata[cId] || { representatives: [] };
-        const representatives = metadata.representatives || [];
-        const activeTabKey = activeTab[cId] || 'fb';
+        const metadata =
+          scoredMetadata[cId] ||
+          (scoredMetadata as any)[cluster.cluster_id] ||
+          (scoredMetadata as any)[cIdx];
+        const reps = metadata?.representatives || (cluster.representatives as any) || [];
 
+        // Build ranked list mapping representative image indices
+        const rankedItems =
+          reps.length > 0
+            ? reps.slice(0, currentBestN).map((rep: any, rank: number) => {
+                let imgIdx = rep.image_idx;
+                if (imgIdx === undefined && rep.filename) {
+                  const matchIdx = files.findIndex((f) => f.name === rep.filename);
+                  if (matchIdx !== -1) imgIdx = matchIdx;
+                }
+                if (imgIdx === undefined) {
+                  imgIdx = cluster.all_image_indices[rank] ?? rank;
+                }
+                return {
+                  imgIdx,
+                  qualityScore: rep.quality_score ?? 0.9,
+                  rank: rank + 1,
+                };
+              })
+            : cluster.all_image_indices.slice(0, currentBestN).map((imgIdx, rank) => ({
+                imgIdx,
+                qualityScore: Math.max(0.7, 0.95 - rank * 0.05),
+                rank: rank + 1,
+              }));
+
+        const activeTabKey = activeTab[cId] || 'fb';
         const isPostGenerating = isStreaming && !post.facebook_post && !post.instagram_caption;
 
         return (
@@ -252,13 +279,12 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                     ? 'grid-cols-1 sm:grid-cols-2 max-w-2xl'
                     : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
                 }`}>
-                  {cluster.all_image_indices.slice(0, currentBestN).map((imgIdx, rank) => {
+                  {rankedItems.map(({ imgIdx, qualityScore, rank }) => {
                     const fileItem = files[imgIdx];
-                    const rep = representatives[rank] || { quality_score: Math.max(0.7, 0.95 - rank * 0.05) };
 
                     return (
                       <div
-                        key={imgIdx}
+                        key={`${imgIdx}_${rank}`}
                         className="bg-slate-900/90 border border-slate-800 rounded-2xl p-2 space-y-2 relative group hover:border-indigo-500/50 transition-all duration-200 shadow-lg"
                       >
                         <div className="aspect-[16/10] sm:h-48 md:h-52 w-full relative rounded-xl overflow-hidden bg-slate-950">
@@ -274,7 +300,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                             </div>
                           )}
                           <div className="absolute top-2 left-2 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-300 border border-indigo-500/30 shadow-md">
-                            Rank #{rank + 1}
+                            Rank #{rank}
                           </div>
                         </div>
 
@@ -283,7 +309,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                             {fileItem?.name || `File ${imgIdx + 1}`}
                           </span>
                           <span className="font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 text-xs">
-                            {(rep.quality_score * 100).toFixed(0)}% Score
+                            {(qualityScore * 100).toFixed(0)}% Score
                           </span>
                         </div>
                       </div>

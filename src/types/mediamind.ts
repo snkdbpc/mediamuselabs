@@ -15,12 +15,23 @@ export interface ImageDetail {
   image_location: string;
 }
 
+export interface RepresentativeImage {
+  path?: string;
+  quality_score?: number;
+  image_idx?: number;
+  rank?: number;
+  caption?: string;
+}
+
 export interface Cluster {
   cluster_id: string | number;
   name: string;
   tags: string[];
   all_image_indices: number[];
+  representatives?: RepresentativeImage[];
   image_details?: Record<string | number, ImageDetail>;
+  location?: string;
+  description?: string;
 }
 
 export interface SocialPost {
@@ -31,13 +42,9 @@ export interface SocialPost {
   seo_alt_text: string;
 }
 
-export interface RepresentativeImage {
-  path: string;
-  quality_score: number;
-}
-
 export interface ScoredClusterMetadata {
   representatives: RepresentativeImage[];
+  avg_quality?: number;
 }
 
 export interface GoogleAccountStatus {

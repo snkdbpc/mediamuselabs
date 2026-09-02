@@ -48,7 +48,8 @@ export async function getGoogleStatus(connectionId: string): Promise<GoogleAccou
 }
 
 export function getGoogleLoginUrl(connectionId: string): string {
-  return `${REMOTE_API_URL}/auth/google?connection_id=${encodeURIComponent(connectionId)}`;
+  const returnUrl = typeof window !== 'undefined' ? `&return_url=${encodeURIComponent(window.location.origin)}` : '';
+  return `${REMOTE_API_URL}/auth/google?connection_id=${encodeURIComponent(connectionId)}${returnUrl}`;
 }
 
 export async function getFacebookLoginUrl(connectionId: string): Promise<string | null> {

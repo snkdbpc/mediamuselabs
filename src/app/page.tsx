@@ -78,6 +78,17 @@ export default function Home() {
 
     setConnectionId(cid);
     getGoogleStatus(cid).then((status) => setGoogleStatus(status));
+
+    // Listen for OAuth completion from popup window
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        getGoogleStatus(cid).then((status) => {
+          if (status.connected) setGoogleStatus(status);
+        });
+      }
+    };
+    window.addEventListener('message', handleAuthMessage);
+    return () => window.removeEventListener('message', handleAuthMessage);
   }, []);
 
   // Poll Google status when not yet connected
@@ -116,7 +127,24 @@ export default function Home() {
       // 3. Call clustering service
       const clusterRes = await createClusters(newAlbumId, filenames, indexMap, albumDescription);
       setClusters(clusterRes.clusters);
-      setScoredMetadata({});
+
+      // Initialize scored metadata from cluster representatives
+      const initialScored: Record<string, ScoredClusterMetadata> = {};
+      clusterRes.clusters.forEach((c) => {
+        const cId = String(c.cluster_id);
+        if (c.representatives && c.representatives.length > 0) {
+          initialScored[cId] = {
+            representatives: c.representatives.map((r, rank) => ({
+              rank: rank + 1,
+              path: '',
+              quality_score: r.quality_score ?? 0.9,
+              image_idx: r.image_idx,
+            })),
+            avg_quality: 0.9,
+          };
+        }
+      });
+      setScoredMetadata(initialScored);
       setCurrentStep('choose');
     } catch (err: any) {
       alert(`Clustering failed: ${err.message || err}`);
@@ -132,6 +160,17 @@ export default function Home() {
     setCurrentStep('finalize');
     setIsGenerating(true);
     setStreamProgress({ completed: 0, total: clusters.length, text: 'Starting social-copy generation...' });
+
+    // Trigger parallel quality scoring (runs immediately in parallel with copy stream)
+    scoreClusterImages(albumId, clusters, 4)
+      .then((scoreRes) => {
+        if (scoreRes?.scored_clusters) {
+          setScoredMetadata(scoreRes.scored_clusters);
+        }
+      })
+      .catch((scoreErr) => {
+        console.warn('Parallel quality scoring notice:', scoreErr);
+      });
 
     try {
       const postsObj: Record<string, SocialPost> = {};
@@ -154,14 +193,6 @@ export default function Home() {
           console.error(`Post generation failed for cluster ${clusterId}:`, errMsg);
         }
       );
-
-      // Trigger parallel quality scoring (top 3 photos)
-      try {
-        const scoreRes = await scoreClusterImages(albumId, clusters, 3);
-        setScoredMetadata(scoreRes.scored_clusters);
-      } catch (scoreErr) {
-        console.warn('Quality scoring warning:', scoreErr);
-      }
 
       // Confetti burst on completion!
       confetti({
