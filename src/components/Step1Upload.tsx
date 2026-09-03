@@ -21,7 +21,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { UploadedFileItem } from '../types/mediamind';
-import { getGoogleLoginUrl, compressImageToJpeg } from '../lib/api';
+import { getGoogleLoginUrl, compressImageToJpeg, getDisplayPreviewUrl } from '../lib/api';
 import { parseExifFromFile } from '../lib/exif';
 
 interface Step1UploadProps {
@@ -353,9 +353,17 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                     className="aspect-square relative overflow-hidden bg-slate-950 cursor-pointer"
                   >
                     <img
-                      src={item.previewUrl}
+                      src={getDisplayPreviewUrl(item.previewUrl, item.originalName || item.name)}
                       alt={item.name}
+                      loading="lazy"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        const fallbackSource = item.r2Url || item.previewUrl;
+                        if (fallbackSource && !target.src.includes('/media/preview')) {
+                          target.src = `/api/v1/media/preview?url=${encodeURIComponent(fallbackSource)}`;
+                        }
+                      }}
                     />
 
                     {/* Include checkbox */}
@@ -511,9 +519,17 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
 
             <div className="flex items-center gap-4">
               <img
-                src={selectedExifItem.previewUrl}
+                src={getDisplayPreviewUrl(selectedExifItem.previewUrl, selectedExifItem.originalName || selectedExifItem.name)}
                 alt={selectedExifItem.name}
+                loading="lazy"
                 className="w-24 h-24 rounded-xl object-cover border border-slate-700 bg-slate-950 flex-shrink-0"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  const fallbackSource = selectedExifItem.r2Url || selectedExifItem.previewUrl;
+                  if (fallbackSource && !target.src.includes('/media/preview')) {
+                    target.src = `/api/v1/media/preview?url=${encodeURIComponent(fallbackSource)}`;
+                  }
+                }}
               />
               <div className="truncate">
                 <h4 className="font-bold text-slate-200 text-sm truncate">{selectedExifItem.originalName || selectedExifItem.name}</h4>

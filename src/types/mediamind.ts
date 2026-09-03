@@ -7,6 +7,24 @@ export interface CreatorProfile {
   content_type: string;
   target_audience: string;
   target_age_group: string;
+  professional?: boolean;
+  publishing_preference?: Record<string, boolean>;
+  target_age_groups?: string[];
+  preset_id?: string;
+  preset_name?: string;
+}
+
+export interface UserPreset {
+  id?: string;
+  user_id?: string;
+  name: string;
+  user_type: string;
+  professional: boolean;
+  publishing_preference: Record<string, boolean>;
+  target_audience: string;
+  target_age_groups: string[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ImageDetail {
@@ -52,6 +70,38 @@ export interface GoogleAccountStatus {
   name?: string;
   email?: string;
   picture?: string;
+  google_id?: string;
+  supabase_user_id?: string;
+}
+
+export interface SavedProjectSummary {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  media_count: number;
+  clusters_count: number;
+}
+
+export interface LoadedProjectData {
+  project: {
+    id: string;
+    user_id: string;
+    name: string;
+    description?: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  };
+  preset?: UserPreset;
+  media: UploadedFileItem[];
+  clusters: Cluster[];
+  posts: Record<string, SocialPost>;
+  scoredMetadata?: Record<string, ScoredClusterMetadata>;
+  albumDescription?: string;
 }
 
 export interface ExifInfo {
@@ -111,3 +161,23 @@ export interface UploadedFileItem {
   r2Status?: 'idle' | 'uploading' | 'success' | 'error';
   r2Error?: string;
 }
+
+export interface SocialAccount {
+  id: string;
+  user_id: string;
+  platform: 'facebook' | 'instagram';
+  platform_user_id?: string;
+  username?: string;
+  page_id?: string;
+  page_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PublishResult {
+  success: boolean;
+  post_id?: string;
+  post_url?: string;
+  error?: string;
+}
+

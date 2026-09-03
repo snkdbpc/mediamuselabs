@@ -7,6 +7,8 @@ import { Sidebar } from '../components/Sidebar';
 import { StepIndicator } from '../components/StepIndicator';
 import { Step1Upload } from '../components/Step1Upload';
 import { Step3SocialCenter } from '../components/Step3SocialCenter';
+import { SavedProjectsModal } from '../components/SavedProjectsModal';
+import { SaveProjectModal } from '../components/SaveProjectModal';
 import {
   AppStep,
   Cluster,
@@ -15,6 +17,8 @@ import {
   ScoredClusterMetadata,
   SocialPost,
   UploadedFileItem,
+  UserPreset,
+  SavedProjectSummary,
 } from '../types/mediamind';
 import {
   createClusters,
@@ -24,10 +28,31 @@ import {
   uploadAlbum,
 } from '../lib/api';
 import { uploadOriginalFilesBatch } from '../lib/r2';
+import {
+  syncUserWithSupabase,
+  fetchUserPresets,
+  saveUserPreset,
+  saveProjectToSupabase,
+  fetchUserProjects,
+  loadProjectFromSupabase,
+  deleteProjectFromSupabase,
+} from '../lib/supabase';
 
 export default function Home() {
   const [connectionId, setConnectionId] = useState<string>('');
   const [googleStatus, setGoogleStatus] = useState<GoogleAccountStatus>({ connected: false });
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+
+  // User presets state (from Supabase user_presets table)
+  const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [savePresetOnNextStep, setSavePresetOnNextStep] = useState<boolean>(true);
+
+  // Saved Projects state (from Supabase projects table)
+  const [savedProjects, setSavedProjects] = useState<SavedProjectSummary[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState<boolean>(false);
+  const [isSavedProjectsModalOpen, setIsSavedProjectsModalOpen] = useState<boolean>(false);
+  const [isSaveProjectModalOpen, setIsSaveProjectModalOpen] = useState<boolean>(false);
 
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>({
     user_type: 'Individual',
@@ -36,6 +61,9 @@ export default function Home() {
     content_type: 'Social post',
     target_audience: '',
     target_age_group: '18–24',
+    professional: false,
+    publishing_preference: { facebook: true, instagram: true, twitter: true },
+    target_age_groups: ['18–24'],
   });
 
   const [currentStep, setCurrentStep] = useState<AppStep>('upload');
@@ -104,10 +132,128 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [connectionId, googleStatus.connected]);
 
-  // Step 1: Upload & Cluster Analysis with Parallel Storage Sync
+  // Sync authenticated user with Supabase `users` table & load presets/projects
+  useEffect(() => {
+    if (!googleStatus.connected || !googleStatus.email) return;
+
+    syncUserWithSupabase(googleStatus).then((userId) => {
+      if (userId) {
+        setSupabaseUserId(userId);
+
+        // Load saved user presets
+        fetchUserPresets(userId).then((presets) => {
+          setUserPresets(presets);
+          if (presets.length > 0 && !selectedPresetId) {
+            const p0 = presets[0];
+            setSelectedPresetId(p0.id || null);
+            setCreatorProfile((prev) => ({
+              ...prev,
+              preset_id: p0.id,
+              preset_name: p0.name,
+              name: p0.name || prev.name,
+              user_type: p0.user_type || prev.user_type,
+              professional: p0.professional,
+              publishing_preference: p0.publishing_preference || prev.publishing_preference,
+              target_audience: p0.target_audience || prev.target_audience,
+              target_age_groups: p0.target_age_groups || prev.target_age_groups,
+              target_age_group: p0.target_age_groups?.[0] || prev.target_age_group,
+            }));
+          }
+        });
+
+        // Load saved projects list
+        fetchUserProjects(userId).then((projs) => {
+          setSavedProjects(projs);
+        });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleStatus.connected, googleStatus.email]);
+
+  // Preset Selection Handler
+  const handleSelectPreset = (preset: UserPreset | null) => {
+    if (!preset) {
+      setSelectedPresetId(null);
+      return;
+    }
+    setSelectedPresetId(preset.id || null);
+    setCreatorProfile((prev) => ({
+      ...prev,
+      preset_id: preset.id,
+      preset_name: preset.name,
+      name: preset.name || prev.name,
+      user_type: preset.user_type || prev.user_type,
+      professional: preset.professional,
+      publishing_preference: preset.publishing_preference || prev.publishing_preference,
+      target_audience: preset.target_audience || prev.target_audience,
+      target_age_groups: preset.target_age_groups || prev.target_age_groups,
+      target_age_group: preset.target_age_groups?.[0] || prev.target_age_group,
+    }));
+  };
+
+  // Manual Save Preset Handler
+  const handleManualSavePreset = async (presetName: string): Promise<boolean> => {
+    if (!supabaseUserId) {
+      alert('Please connect your Google account first to save presets.');
+      return false;
+    }
+    const presetPayload: UserPreset = {
+      id: selectedPresetId || undefined,
+      user_id: supabaseUserId,
+      name: presetName,
+      user_type: creatorProfile.user_type || 'Individual',
+      professional: Boolean(creatorProfile.professional),
+      publishing_preference: creatorProfile.publishing_preference || {
+        facebook: true,
+        instagram: true,
+        twitter: true,
+      },
+      target_audience: creatorProfile.target_audience || '',
+      target_age_groups:
+        creatorProfile.target_age_groups || [creatorProfile.target_age_group].filter(Boolean),
+    };
+
+    const saved = await saveUserPreset(supabaseUserId, presetPayload);
+    if (saved) {
+      setSelectedPresetId(saved.id || null);
+      const refreshed = await fetchUserPresets(supabaseUserId);
+      setUserPresets(refreshed);
+      return true;
+    }
+    return false;
+  };
+
+  // Step 1: Upload & Cluster Analysis with Parallel Storage Sync & Preset Auto-Save
   const handleAnalyzeAlbum = async () => {
     const activeItems = uploadedFiles.filter((item) => item.included);
     if (activeItems.length < 1) return;
+
+    // Auto-save user preset to Supabase user_presets if user opted to save preset
+    if (supabaseUserId && savePresetOnNextStep) {
+      const presetToSave: UserPreset = {
+        id: selectedPresetId || undefined,
+        user_id: supabaseUserId,
+        name: creatorProfile.preset_name || creatorProfile.name || 'My Preset',
+        user_type: creatorProfile.user_type || 'Individual',
+        professional: Boolean(creatorProfile.professional),
+        publishing_preference: creatorProfile.publishing_preference || {
+          facebook: true,
+          instagram: true,
+          twitter: true,
+        },
+        target_audience: creatorProfile.target_audience || '',
+        target_age_groups:
+          creatorProfile.target_age_groups || [creatorProfile.target_age_group].filter(Boolean),
+      };
+
+      saveUserPreset(supabaseUserId, presetToSave)
+        .then((saved) => {
+          if (saved) {
+            fetchUserPresets(supabaseUserId).then(setUserPresets);
+          }
+        })
+        .catch((err) => console.warn('Auto-save preset notice:', err));
+    }
 
     setIsAnalyzing(true);
     try {
@@ -243,6 +389,90 @@ export default function Home() {
     }));
   };
 
+  // Save Project to Supabase
+  const handleSaveProject = async (name: string, description?: string): Promise<boolean> => {
+    if (!supabaseUserId) {
+      alert('Please connect your Google account first to save projects.');
+      return false;
+    }
+
+    const res = await saveProjectToSupabase({
+      userId: supabaseUserId,
+      name,
+      description,
+      status: 'finalized',
+      creatorProfile,
+      files: uploadedFiles,
+      clusters,
+      posts: generatedPosts,
+      scoredMetadata,
+    });
+
+    if (res.success) {
+      // Refresh saved projects list
+      fetchUserProjects(supabaseUserId).then(setSavedProjects);
+      return true;
+    } else {
+      alert(`Failed to save project: ${res.error}`);
+      return false;
+    }
+  };
+
+  // Open a saved project from Supabase
+  const handleOpenProject = async (projectId: string) => {
+    setIsLoadingProjects(true);
+    try {
+      const data = await loadProjectFromSupabase(projectId);
+      if (!data) {
+        alert('Could not load saved project. Please try again.');
+        return;
+      }
+
+      // 1. Restore Creator Profile
+      if (data.preset) {
+        setCreatorProfile({
+          user_type: data.preset.user_type,
+          name: data.preset.name,
+          profession: '',
+          content_type: 'Social post',
+          target_audience: data.preset.target_audience,
+          target_age_group: data.preset.target_age_groups?.[0] || '18-24',
+          professional: data.preset.professional,
+          publishing_preference: data.preset.publishing_preference,
+          target_age_groups: data.preset.target_age_groups,
+          preset_id: data.preset.id,
+          preset_name: data.preset.name,
+        });
+      }
+
+      // 2. Restore Project State
+      setAlbumId(data.project.id);
+      setAlbumDescription(data.albumDescription || data.project.description || '');
+      setUploadedFiles(data.media);
+      setClusters(data.clusters);
+      setGeneratedPosts(data.posts);
+      if (data.scoredMetadata) {
+        setScoredMetadata(data.scoredMetadata);
+      }
+
+      // 3. Set Step to Finalize Screen
+      setCurrentStep('finalize');
+    } catch (err: any) {
+      console.error('Error opening project:', err);
+      alert(`Failed to load project: ${err.message || err}`);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
+
+  // Delete a saved project
+  const handleDeleteProject = async (projectId: string) => {
+    const ok = await deleteProjectFromSupabase(projectId);
+    if (ok && supabaseUserId) {
+      setSavedProjects((prev) => prev.filter((p) => p.id !== projectId));
+    }
+  };
+
   const handleResetApp = () => {
     setUploadedFiles([]);
     setAlbumDescription('');
@@ -253,22 +483,38 @@ export default function Home() {
     setCurrentStep('upload');
   };
 
+  const totalGeneratedPostsCount = Object.values(generatedPosts).filter((p) =>
+    Boolean(p.facebook_post || p.instagram_caption || p.twitter_post)
+  ).length;
+
   return (
     <div className="min-h-screen bg-[#0B0F19] text-slate-100 relative w-full">
       <div className="ambient-glow" />
 
       <main className="relative z-10 w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-16">
-        {/* Top Header */}
+        {/* Top Header with Saved Projects Trigger */}
         <Header
           creatorProfile={creatorProfile}
           googleStatus={googleStatus}
           connectionId={connectionId}
+          savedProjectsCount={savedProjects.length}
+          onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
         />
 
         {/* Main Content Layout */}
         <div className="flex flex-col lg:flex-row items-start gap-8 w-full">
-          {/* Sidebar Creator Profile */}
-          <Sidebar profile={creatorProfile} onChange={setCreatorProfile} />
+          {/* Sidebar Creator Profile & Presets */}
+          <Sidebar
+            profile={creatorProfile}
+            onChange={setCreatorProfile}
+            userPresets={userPresets}
+            isSigned={googleStatus.connected}
+            selectedPresetId={selectedPresetId}
+            onSelectPreset={handleSelectPreset}
+            savePresetOnNextStep={savePresetOnNextStep}
+            onToggleSavePresetOnNextStep={setSavePresetOnNextStep}
+            onManualSavePreset={handleManualSavePreset}
+          />
 
           {/* Workflow Center */}
           <div className="flex-1 w-full min-w-0">
@@ -300,6 +546,8 @@ export default function Home() {
                 files={uploadedFiles}
                 creatorProfile={creatorProfile}
                 connectionId={connectionId}
+                userId={supabaseUserId}
+                projectId={albumId}
                 isStreaming={isGenerating}
                 streamProgress={streamProgress}
                 onPostUpdate={handlePostUpdate}
@@ -307,11 +555,38 @@ export default function Home() {
                 onClustersChange={setClusters}
                 onSetStep={(step) => setCurrentStep(step)}
                 onResetApp={handleResetApp}
+                onOpenSaveProject={() => setIsSaveProjectModalOpen(true)}
               />
             )}
           </div>
         </div>
       </main>
+
+      {/* Saved Projects Modal */}
+      <SavedProjectsModal
+        isOpen={isSavedProjectsModalOpen}
+        onClose={() => setIsSavedProjectsModalOpen(false)}
+        projects={savedProjects}
+        isLoading={isLoadingProjects}
+        onOpenProject={handleOpenProject}
+        onDeleteProject={handleDeleteProject}
+      />
+
+      {/* Save Project Modal */}
+      <SaveProjectModal
+        isOpen={isSaveProjectModalOpen}
+        onClose={() => setIsSaveProjectModalOpen(false)}
+        onSave={handleSaveProject}
+        defaultName={
+          creatorProfile.name
+            ? `${creatorProfile.name} Project`
+            : `Visual Album ${new Date().toLocaleDateString()}`
+        }
+        defaultDescription={albumDescription}
+        totalMediaCount={uploadedFiles.length}
+        clustersCount={clusters.length}
+        postsCount={totalGeneratedPostsCount}
+      />
     </div>
   );
 }

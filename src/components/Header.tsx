@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { CheckCircle2, Sparkles } from 'lucide-react';
+import { CheckCircle2, Sparkles, Folder } from 'lucide-react';
 import { CreatorProfile, GoogleAccountStatus } from '../types/mediamind';
 import { getGoogleLoginUrl } from '../lib/api';
 import logoImg from '../app/mediamuselabs_logo.png';
@@ -11,9 +11,17 @@ interface HeaderProps {
   creatorProfile: CreatorProfile;
   googleStatus: GoogleAccountStatus;
   connectionId: string;
+  savedProjectsCount?: number;
+  onOpenSavedProjectsModal?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ creatorProfile, googleStatus, connectionId }) => {
+export const Header: React.FC<HeaderProps> = ({
+  creatorProfile,
+  googleStatus,
+  connectionId,
+  savedProjectsCount = 0,
+  onOpenSavedProjectsModal,
+}) => {
   const profileLabel = creatorProfile.name || creatorProfile.profession || 'your visual story';
   const googleLoginUrl = getGoogleLoginUrl(connectionId);
 
@@ -58,8 +66,24 @@ export const Header: React.FC<HeaderProps> = ({ creatorProfile, googleStatus, co
           </div>
         </div>
 
-        {/* Right side Actions: Google Auth */}
+        {/* Right side Actions: Saved Projects & Google Auth */}
         <div className="flex items-center gap-3 self-end md:self-auto">
+          {/* Saved Projects Button - only shown after successful login */}
+          {googleStatus.connected && onOpenSavedProjectsModal && (
+            <button
+              onClick={onOpenSavedProjectsModal}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 hover:border-indigo-500/50 text-slate-200 text-xs font-semibold transition-all shadow-md shadow-slate-950/40 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Folder className="w-4 h-4 text-indigo-400" />
+              <span>Saved Projects</span>
+              {savedProjectsCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                  {savedProjectsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Google Account Status / Login */}
           {googleStatus.connected ? (
             <div className="flex items-center gap-3 bg-slate-900/80 border border-emerald-500/30 px-4 py-2 rounded-xl text-xs font-medium text-emerald-300 shadow-md">

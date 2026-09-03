@@ -4,6 +4,8 @@ import {
   GoogleAccountStatus,
   ScoredClusterMetadata,
   SocialPost,
+  SocialAccount,
+  PublishResult,
 } from '../types/mediamind';
 import { preserveExifInJpeg } from './exif';
 
@@ -18,7 +20,7 @@ const API_PREFIX = '/api/v1';
  * Fetch wrapper that sends requests through Next.js proxy route,
  * and automatically falls back to direct remote API URL if proxy drops connection (e.g. socket hangup).
  */
-async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
+export async function apiFetch(endpoint: string, options?: RequestInit): Promise<Response> {
   const primaryUrl = `${API_BASE_URL}${API_PREFIX}${endpoint}`;
   try {
     const res = await fetch(primaryUrl, options);
@@ -155,7 +157,14 @@ export async function streamSocialPosts(
   });
 
   if (!res.ok || !res.body) {
-    throw new Error(`SSE stream connection failed with status ${res.status}`);
+    let detailMsg = '';
+    try {
+      const errJson = await res.json();
+      detailMsg = errJson.detail
+        ? (typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail))
+        : '';
+    } catch {}
+    throw new Error(detailMsg || `SSE stream connection failed with status ${res.status}`);
   }
 
   const reader = res.body.getReader();
@@ -358,4 +367,133 @@ export async function compressImageToJpeg(
     img.src = objectUrl;
   });
 }
+
+/**
+ * Ensures an image preview URL can be rendered natively in web browsers.
+ * For HEIC/HEIF files loaded from Cloudflare R2 / Supabase, routes through the backend
+ * preview endpoint so non-Safari browsers (Chrome, Edge, Firefox) can display them seamlessly.
+ */
+export function getDisplayPreviewUrl(url?: string, filename?: string): string {
+  if (!url) return '';
+  const lowerUrl = url.toLowerCase();
+  const lowerName = (filename || '').toLowerCase();
+  const isHeic =
+    lowerUrl.includes('.heic') ||
+    lowerUrl.includes('.heif') ||
+    lowerName.endsWith('.heic') ||
+    lowerName.endsWith('.heif');
+
+  if (isHeic && !url.includes('/media/preview')) {
+    return `/api/v1/media/preview?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
+/**
+ * Fetch Meta OAuth login URL configured with App ID 1097971456003405.
+ */
+export async function getMetaLoginUrl(connectionId: string, userId?: string, platform?: 'facebook' | 'instagram'): Promise<string> {
+  const query = new URLSearchParams({ connection_id: connectionId });
+  if (userId) query.set('user_id', userId);
+  if (platform) query.set('platform', platform);
+  const res = await apiFetch(`/social/meta/login-url?${query.toString()}`);
+  if (!res.ok) {
+    throw new Error('Failed to generate Meta login URL');
+  }
+  const data = await res.json();
+  return data.authorize_url;
+}
+
+/**
+ * Fetch connected social publishing accounts for the logged-in user.
+ */
+export async function fetchUserSocialAccounts(userId: string): Promise<SocialAccount[]> {
+  if (!userId) return [];
+  try {
+    const res = await apiFetch(`/users/${encodeURIComponent(userId)}/social-accounts`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.accounts || [];
+  } catch (err) {
+    console.error('Error fetching social accounts:', err);
+    return [];
+  }
+}
+
+export interface PublishFacebookPayload {
+  userId: string;
+  projectId: string;
+  message: string;
+  imageUrl: string;
+  pageId?: string;
+  generatedContentId?: string;
+}
+
+/**
+ * Publish directly to user's connected Facebook Page using Meta App 1097971456003405.
+ */
+export async function publishToFacebook(payload: PublishFacebookPayload): Promise<PublishResult> {
+  try {
+    const res = await apiFetch('/publish/facebook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: payload.userId,
+        project_id: payload.projectId,
+        message: payload.message,
+        image_url: payload.imageUrl,
+        page_id: payload.pageId,
+        generated_content_id: payload.generatedContentId,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.detail || 'Facebook publishing failed' };
+    }
+    return { success: true, post_id: data.post_id, post_url: data.post_url };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Error publishing to Facebook' };
+  }
+}
+
+export interface PublishInstagramPayload {
+  userId: string;
+  projectId: string;
+  caption: string;
+  imageUrl: string;
+  igUserId?: string;
+  generatedContentId?: string;
+}
+
+/**
+ * Publish directly to user's connected Instagram Professional/Creator account.
+ */
+export async function publishToInstagram(payload: PublishInstagramPayload): Promise<PublishResult> {
+  try {
+    const res = await apiFetch('/publish/instagram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: payload.userId,
+        project_id: payload.projectId,
+        caption: payload.caption,
+        image_url: payload.imageUrl,
+        ig_user_id: payload.igUserId,
+        generated_content_id: payload.generatedContentId,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.detail || 'Instagram publishing failed' };
+    }
+    return { success: true, post_id: data.post_id, post_url: data.post_url };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Error publishing to Instagram' };
+  }
+}
+
 
