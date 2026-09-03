@@ -6,7 +6,6 @@ import { Header } from '../components/Header';
 import { Sidebar } from '../components/Sidebar';
 import { StepIndicator } from '../components/StepIndicator';
 import { Step1Upload } from '../components/Step1Upload';
-import { Step2ChooseOrEdit } from '../components/Step2ChooseOrEdit';
 import { Step3SocialCenter } from '../components/Step3SocialCenter';
 import {
   AppStep,
@@ -24,6 +23,7 @@ import {
   streamSocialPosts,
   uploadAlbum,
 } from '../lib/api';
+import { uploadOriginalFilesBatch } from '../lib/r2';
 
 export default function Home() {
   const [connectionId, setConnectionId] = useState<string>('');
@@ -104,28 +104,46 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [connectionId, googleStatus.connected]);
 
-  // Step 1: Upload & Cluster Analysis
+  // Step 1: Upload & Cluster Analysis with Parallel Storage Sync
   const handleAnalyzeAlbum = async () => {
     const activeItems = uploadedFiles.filter((item) => item.included);
     if (activeItems.length < 1) return;
 
     setIsAnalyzing(true);
     try {
-      // 1. Upload compressed JPEG image files
-      const rawFiles = activeItems.map((item) => item.file);
-      const uploadRes = await uploadAlbum(rawFiles, connectionId);
+      // 1. Upload lightweight images to backend for fast clustering analysis
+      const lightweightFiles = activeItems.map((item) => item.compressedFile || item.file);
+      const uploadRes = await uploadAlbum(lightweightFiles, connectionId);
       const newAlbumId = uploadRes.album_id;
       setAlbumId(newAlbumId);
 
       // 2. Build index map matching uploaded files
-      const filenames = activeItems.map((item) => item.file.name);
+      const filenames = lightweightFiles.map((f) => f.name);
       const indexMap: Record<string, number> = {};
       filenames.forEach((name, idx) => {
         indexMap[name] = idx;
       });
 
-      // 3. Call clustering service
-      const clusterRes = await createClusters(newAlbumId, filenames, indexMap, albumDescription);
+      // 3. Parallel Execution during Clustering Phase:
+      // (a) Sync uncompressed original files to bucket storage in parallel (opaque to user)
+      const storageSyncPromise = uploadOriginalFilesBatch(
+        activeItems,
+        newAlbumId,
+        (fileId, r2Url) => {
+          setUploadedFiles((prev) =>
+            prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+          );
+        }
+      ).catch((err) => {
+        console.warn('Storage sync notice:', err);
+        return {};
+      });
+
+      // (b) Run clustering analysis on the backend
+      const clusterPromise = createClusters(newAlbumId, filenames, indexMap, albumDescription);
+
+      // Wait for both clustering and original photo sync to complete
+      const [, clusterRes] = await Promise.all([storageSyncPromise, clusterPromise]);
       setClusters(clusterRes.clusters);
 
       // Initialize scored metadata from cluster representatives
@@ -144,8 +162,19 @@ export default function Home() {
           };
         }
       });
+      // Background photo quality scoring
+      scoreClusterImages(newAlbumId, clusterRes.clusters, 4)
+        .then((scoreRes) => {
+          if (scoreRes?.scored_clusters) {
+            setScoredMetadata((prev) => ({ ...prev, ...scoreRes.scored_clusters }));
+          }
+        })
+        .catch((scoreErr) => {
+          console.warn('Background quality scoring notice:', scoreErr);
+        });
+
       setScoredMetadata(initialScored);
-      setCurrentStep('choose');
+      setCurrentStep('finalize');
     } catch (err: any) {
       alert(`Clustering failed: ${err.message || err}`);
     } finally {
@@ -153,24 +182,23 @@ export default function Home() {
     }
   };
 
-  // Step 2 -> Step 3: Trigger Streaming Post Generation & Photo Scoring
-  const handleGenerateSocialPosts = async () => {
+  // Trigger Streaming Post Generation
+  const handleGenerateSocialPosts = async (targetClusterId?: string) => {
     if (!albumId || clusters.length === 0) return;
+
+    const clustersToProcess = targetClusterId
+      ? clusters.filter((c) => String(c.cluster_id) === String(targetClusterId))
+      : clusters;
+
+    if (clustersToProcess.length === 0) return;
 
     setCurrentStep('finalize');
     setIsGenerating(true);
-    setStreamProgress({ completed: 0, total: clusters.length, text: 'Starting social-copy generation...' });
-
-    // Trigger parallel quality scoring (runs immediately in parallel with copy stream)
-    scoreClusterImages(albumId, clusters, 4)
-      .then((scoreRes) => {
-        if (scoreRes?.scored_clusters) {
-          setScoredMetadata(scoreRes.scored_clusters);
-        }
-      })
-      .catch((scoreErr) => {
-        console.warn('Parallel quality scoring notice:', scoreErr);
-      });
+    setStreamProgress({
+      completed: 0,
+      total: clustersToProcess.length,
+      text: `Preparing social media posts (${clustersToProcess.length} cluster${clustersToProcess.length > 1 ? 's' : ''})...`,
+    });
 
     try {
       const postsObj: Record<string, SocialPost> = {};
@@ -178,7 +206,7 @@ export default function Home() {
       // SSE Stream post generation
       await streamSocialPosts(
         albumId,
-        clusters,
+        clustersToProcess,
         creatorProfile,
         (clusterId, post, completed, total) => {
           postsObj[clusterId] = post;
@@ -186,7 +214,7 @@ export default function Home() {
           setStreamProgress({
             completed,
             total,
-            text: `Generated social posts for cluster ${completed}/${total}...`,
+            text: `Generated posts (${completed}/${total})...`,
           });
         },
         (clusterId, errMsg) => {
@@ -264,18 +292,6 @@ export default function Home() {
               />
             )}
 
-            {(currentStep === 'choose' || currentStep === 'edit') && (
-              <Step2ChooseOrEdit
-                currentStep={currentStep}
-                clusters={clusters}
-                files={uploadedFiles}
-                onSetStep={(step) => setCurrentStep(step)}
-                onClustersChange={setClusters}
-                onGenerate={handleGenerateSocialPosts}
-                isLoading={isGenerating}
-              />
-            )}
-
             {currentStep === 'finalize' && (
               <Step3SocialCenter
                 clusters={clusters}
@@ -287,6 +303,8 @@ export default function Home() {
                 isStreaming={isGenerating}
                 streamProgress={streamProgress}
                 onPostUpdate={handlePostUpdate}
+                onGeneratePosts={handleGenerateSocialPosts}
+                onClustersChange={setClusters}
                 onSetStep={(step) => setCurrentStep(step)}
                 onResetApp={handleResetApp}
               />

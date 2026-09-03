@@ -52,7 +52,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
   isLoading,
 }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isCompressing, setIsCompressing] = useState<boolean>(false);
+  const [isPreparing, setIsPreparing] = useState<boolean>(false);
   const [selectedExifItem, setSelectedExifItem] = useState<UploadedFileItem | null>(null);
   const googleLoginUrl = getGoogleLoginUrl(connectionId);
 
@@ -92,24 +92,27 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
       return;
     }
 
-    setIsCompressing(true);
+    setIsPreparing(true);
     try {
-      // Extract EXIF metadata from original files and compress to JPEG preserving EXIF
+      // Extract EXIF metadata from original files and prepare preview representations
       const newItems: UploadedFileItem[] = await Promise.all(
         selectedFiles.map(async (file, idx) => {
-          // Parse rich EXIF metadata from the original file (GPS, time, camera, device)
+          // Parse rich EXIF metadata from the original uncompressed file (GPS, time, camera, device)
           const exifInfo = await parseExifFromFile(file);
 
-          // Compress image while preserving EXIF binary payload
+          // Create lightweight representation for fast clustering and preview
           const compressedFile = await compressImageToJpeg(file, 1024, 0.8);
 
           return {
-            id: `${compressedFile.name}_${Date.now()}_${idx}`,
-            file: compressedFile,
+            id: `${file.name}_${Date.now()}_${idx}`,
+            file: file,                      // Original uncompressed file
+            originalFile: file,              // Original uncompressed file
+            compressedFile: compressedFile,  // Lightweight file for clustering
+            originalSize: file.size,
             previewUrl: URL.createObjectURL(compressedFile),
-            name: compressedFile.name,
+            name: file.name,
             originalName: file.name,
-            size: compressedFile.size,
+            size: file.size,
             included: true,
             exif: exifInfo,
           };
@@ -121,7 +124,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
       console.error('Image processing failed:', err);
       setErrorMsg('Failed to process one or more images. Please try again.');
     } finally {
-      setIsCompressing(false);
+      setIsPreparing(false);
       e.target.value = '';
     }
   };
@@ -216,7 +219,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
         {/* Dropzone */}
         <div
           className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 group ${
-            isSigned && !isCompressing
+            isSigned && !isPreparing
               ? 'border-slate-700 hover:border-indigo-500/70 bg-slate-900/40'
               : 'border-slate-800 bg-slate-950/60 opacity-60 cursor-not-allowed'
           }`}
@@ -224,13 +227,13 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
           <input
             type="file"
             multiple
-            disabled={!isSigned || isCompressing || isLoading}
+            disabled={!isSigned || isPreparing || isLoading}
             accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
             onChange={handleFileDrop}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
           />
           <div className="flex flex-col items-center justify-center gap-3">
-            {isCompressing ? (
+            {isPreparing ? (
               <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center animate-spin">
                 <Loader2 className="w-7 h-7" />
               </div>
@@ -241,8 +244,8 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
             )}
             <div>
               <p className="font-semibold text-slate-200 text-base">
-                {isCompressing ? (
-                  'Processing & preparing images...'
+                {isPreparing ? (
+                  'Preparing images...'
                 ) : isSigned ? (
                   <>
                     Drag and drop your photos here, or <span className="text-indigo-400 underline">browse</span>
@@ -275,9 +278,29 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                 Uncheck photos to exclude them from visual clustering. Click EXIF tags to inspect full metadata.
               </p>
             </div>
-            <span className="text-xs font-semibold px-3 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 self-start sm:self-auto">
-              {activeFiles.length} included
-            </span>
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => onFilesChange(files.map((f) => ({ ...f, included: true })))}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700 hover:border-emerald-500/50 transition-colors shadow-sm"
+              >
+                <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Select All</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onFilesChange(files.map((f) => ({ ...f, included: false })))}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700 hover:border-slate-600 transition-colors shadow-sm"
+              >
+                <Square className="w-3.5 h-3.5 text-slate-400" />
+                <span>Deselect All</span>
+              </button>
+
+              <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                {activeFiles.length} included
+              </span>
+            </div>
           </div>
 
           {/* Album Metadata Summary Banner */}
@@ -450,12 +473,12 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Analyzing & Clustering...</span>
+                  <span>Analyzing Your Photos...</span>
                 </>
               ) : (
                 <>
                   <Rocket className="w-4 h-4" />
-                  <span>Analyze & Cluster Images</span>
+                  <span>Let Go!</span>
                 </>
               )}
             </button>

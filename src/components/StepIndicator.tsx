@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { AppStep } from '../types/mediamind';
-import { Upload, SlidersHorizontal, Share2, Check } from 'lucide-react';
+import { Upload, Share2, Check } from 'lucide-react';
 
 interface StepIndicatorProps {
   currentStep: AppStep;
@@ -12,24 +12,22 @@ interface StepIndicatorProps {
 export const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onStepClick }) => {
   const steps: { id: AppStep; name: string; number: number; icon: React.ReactNode }[] = [
     { id: 'upload', name: '1. Upload & Preview', number: 1, icon: <Upload className="w-4 h-4" /> },
-    { id: 'choose', name: '2. Generate Social Copy', number: 2, icon: <SlidersHorizontal className="w-4 h-4" /> },
-    { id: 'finalize', name: '3. Finalize & Share', number: 3, icon: <Share2 className="w-4 h-4" /> },
+    { id: 'finalize', name: '2. Social Media Posts', number: 2, icon: <Share2 className="w-4 h-4" /> },
   ];
 
   const getCurrentStepIndex = (): number => {
     if (currentStep === 'upload') return 0;
-    if (currentStep === 'choose' || currentStep === 'edit') return 1;
-    return 2;
+    return 1;
   };
 
   const activeIdx = getCurrentStepIndex();
 
-  const progressPercentage = activeIdx === 0 ? 33 : activeIdx === 1 ? 66 : 100;
+  const progressPercentage = activeIdx === 0 ? 50 : 100;
 
   return (
     <div className="w-full mb-8">
       {/* Step Buttons */}
-      <div className="grid grid-cols-3 gap-3 md:gap-4 p-2 glass-card border border-slate-800 shadow-lg">
+      <div className="grid grid-cols-2 gap-3 md:gap-4 p-2 glass-card border border-slate-800 shadow-lg">
         {steps.map((step, idx) => {
           const isActive = idx === activeIdx;
           const isCompleted = idx < activeIdx;

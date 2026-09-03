@@ -87,13 +87,27 @@ export interface ExifInfo {
   imageHeight?: number;
 }
 
+export interface R2Config {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucketName: string;
+  publicDomainUrl?: string;
+}
+
 export interface UploadedFileItem {
   id: string;
   file: File;
+  originalFile?: File;
+  compressedFile?: File;
+  originalSize?: number;
   previewUrl: string;
   name: string;
   originalName?: string;
   size: number;
   included: boolean;
   exif?: ExifInfo;
+  r2Url?: string;
+  r2Status?: 'idle' | 'uploading' | 'success' | 'error';
+  r2Error?: string;
 }

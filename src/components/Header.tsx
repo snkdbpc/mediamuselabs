@@ -58,8 +58,9 @@ export const Header: React.FC<HeaderProps> = ({ creatorProfile, googleStatus, co
           </div>
         </div>
 
-        {/* Account Status / Login */}
+        {/* Right side Actions: Google Auth */}
         <div className="flex items-center gap-3 self-end md:self-auto">
+          {/* Google Account Status / Login */}
           {googleStatus.connected ? (
             <div className="flex items-center gap-3 bg-slate-900/80 border border-emerald-500/30 px-4 py-2 rounded-xl text-xs font-medium text-emerald-300 shadow-md">
               {googleStatus.picture ? (
