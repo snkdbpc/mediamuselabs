@@ -34,13 +34,14 @@ import {
   Send,
   AlertCircle,
 } from 'lucide-react';
-import { toAbsoluteScore, DEFAULT_SCORE_THRESHOLD } from '../lib/r2';
+import { toAbsoluteScore, DEFAULT_SCORE_THRESHOLD, uploadOriginalFileToR2 } from '../lib/r2';
 import {
   getDisplayPreviewUrl,
   getMetaLoginUrl,
   fetchUserSocialAccounts,
   publishToFacebook,
   publishToInstagram,
+  REMOTE_API_URL,
 } from '../lib/api';
 import { SocialAccount } from '../types/mediamind';
 
@@ -252,6 +253,42 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
     }
   };
 
+  const resolvePublicImageUrl = async (
+    fileItem?: UploadedFileItem
+  ): Promise<string | null> => {
+    if (!fileItem) return null;
+
+    // 1. If already uploaded to R2, use the public R2 URL
+    if (fileItem.r2Url) {
+      return fileItem.r2Url;
+    }
+
+    // 2. On-demand upload to Cloudflare R2 if file is present in browser
+    if (fileItem.file || fileItem.originalFile) {
+      const fileToUpload = fileItem.originalFile || fileItem.file;
+      try {
+        const uploadRes = await uploadOriginalFileToR2(
+          fileToUpload,
+          projectId || 'direct_publish',
+          fileItem.originalName || fileItem.name
+        );
+        if (uploadRes.success && uploadRes.url) {
+          fileItem.r2Url = uploadRes.url;
+          return uploadRes.url;
+        }
+      } catch (err) {
+        console.warn('On-demand R2 upload notice:', err);
+      }
+    }
+
+    // 3. Fallback: If album was uploaded to backend, use public album image endpoint
+    if (projectId && fileItem.name) {
+      return `${REMOTE_API_URL}/api/v1/albums/${encodeURIComponent(projectId)}/images/${encodeURIComponent(fileItem.name)}`;
+    }
+
+    return null;
+  };
+
   const handleDirectPublishFacebook = async (
     clusterId: string,
     postText?: string,
@@ -262,17 +299,11 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       return;
     }
     if (!facebookAccount) {
-      handleConnectMeta();
+      handleConnectMeta('facebook');
       return;
     }
     if (!postText) {
       alert('Facebook post content is empty.');
-      return;
-    }
-
-    const imageUrl = selectedFile?.r2Url;
-    if (!imageUrl) {
-      alert('Please save the project first before publishing.');
       return;
     }
 
@@ -282,9 +313,19 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       [stateKey]: { status: 'publishing' },
     }));
 
+    const imageUrl = await resolvePublicImageUrl(selectedFile);
+    if (!imageUrl) {
+      setPublishingState((prev) => ({
+        ...prev,
+        [stateKey]: { status: 'failed', error: 'Unable to obtain a public image URL for Facebook publishing.' },
+      }));
+      alert('Could not prepare an image for publishing. Please ensure an image is selected.');
+      return;
+    }
+
     const result = await publishToFacebook({
       userId,
-      projectId: projectId || 'default_project',
+      projectId: projectId || undefined,
       message: postText,
       imageUrl,
       pageId: facebookAccount.page_id,
@@ -315,17 +356,11 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       return;
     }
     if (!instagramAccount) {
-      handleConnectMeta();
+      handleConnectMeta('instagram');
       return;
     }
     if (!captionText) {
       alert('Instagram caption is empty.');
-      return;
-    }
-
-    const imageUrl = selectedFile?.r2Url;
-    if (!imageUrl) {
-      alert('Please save the project first before publishing.');
       return;
     }
 
@@ -340,9 +375,19 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       [stateKey]: { status: 'publishing' },
     }));
 
+    const imageUrl = await resolvePublicImageUrl(selectedFile);
+    if (!imageUrl) {
+      setPublishingState((prev) => ({
+        ...prev,
+        [stateKey]: { status: 'failed', error: 'Unable to obtain a public image URL for Instagram publishing.' },
+      }));
+      alert('Could not prepare an image for publishing. Please ensure an image is selected.');
+      return;
+    }
+
     const result = await publishToInstagram({
       userId,
-      projectId: projectId || 'default_project',
+      projectId: projectId || undefined,
       caption: fullCaption,
       imageUrl,
       igUserId: instagramAccount.platform_user_id,
@@ -381,7 +426,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       await copyToClipboard(postText);
     }
 
-    const r2Url = selectedFile?.r2Url;
+    const r2Url = await resolvePublicImageUrl(selectedFile);
     const shareUrl = r2Url
       ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(r2Url)}`
       : 'https://www.facebook.com/';
@@ -409,7 +454,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
 
   const handleShareTwitter = async (clusterId: string, tweetText?: string, selectedFile?: UploadedFileItem) => {
     if (!tweetText) return;
-    const r2Url = selectedFile?.r2Url;
+    const r2Url = await resolvePublicImageUrl(selectedFile);
     const textWithMedia = r2Url ? `${tweetText}\n\n${r2Url}` : tweetText;
 
     await copyToClipboard(textWithMedia);

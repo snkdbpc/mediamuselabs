@@ -544,6 +544,11 @@ export default function Home() {
       return false;
     }
 
+    if (!isPro && savedProjects.length >= 2) {
+      alert('Free tier limit reached: You can save up to 2 projects. Upgrade to Pro for unlimited project saves or delete an existing project.');
+      return false;
+    }
+
     const activeItems = uploadedFiles.filter((f) => f.included);
     const res = await saveProjectToSupabase({
       userId: supabaseUserId,
@@ -776,6 +781,10 @@ export default function Home() {
         totalMediaCount={uploadedFiles.length}
         clustersCount={clusters.length}
         postsCount={totalGeneratedPostsCount}
+        isPro={isPro}
+        savedProjectsCount={savedProjects.length}
+        onTogglePro={() => handleTogglePro()}
+        onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
       />
     </div>
   );

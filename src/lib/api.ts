@@ -9,7 +9,7 @@ import {
 } from '../types/mediamind';
 import { preserveExifInJpeg } from './exif';
 
-const REMOTE_API_URL =
+export const REMOTE_API_URL =
   process.env.NEXT_PUBLIC_MEDIAMUSELABS_API_URL ||
   process.env.NEXT_PUBLIC_MEDIAMIND_API_URL ||
   'https://api.mediamuselabs.com';
@@ -448,7 +448,7 @@ export async function fetchUserSocialAccounts(userId: string): Promise<SocialAcc
 
 export interface PublishFacebookPayload {
   userId: string;
-  projectId: string;
+  projectId?: string;
   message: string;
   imageUrl: string;
   pageId?: string;
@@ -465,7 +465,7 @@ export async function publishToFacebook(payload: PublishFacebookPayload): Promis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         user_id: payload.userId,
-        project_id: payload.projectId,
+        project_id: payload.projectId || 'default_project',
         message: payload.message,
         image_url: payload.imageUrl,
         page_id: payload.pageId,
@@ -485,7 +485,7 @@ export async function publishToFacebook(payload: PublishFacebookPayload): Promis
 
 export interface PublishInstagramPayload {
   userId: string;
-  projectId: string;
+  projectId?: string;
   caption: string;
   imageUrl: string;
   igUserId?: string;
@@ -502,7 +502,7 @@ export async function publishToInstagram(payload: PublishInstagramPayload): Prom
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         user_id: payload.userId,
-        project_id: payload.projectId,
+        project_id: payload.projectId || 'default_project',
         caption: payload.caption,
         image_url: payload.imageUrl,
         ig_user_id: payload.igUserId,

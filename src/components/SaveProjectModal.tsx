@@ -10,6 +10,8 @@ import {
   Image as ImageIcon,
   Layers,
   FileText,
+  Crown,
+  Folder,
 } from 'lucide-react';
 
 interface SaveProjectModalProps {
@@ -21,6 +23,10 @@ interface SaveProjectModalProps {
   totalMediaCount: number;
   clustersCount: number;
   postsCount: number;
+  isPro?: boolean;
+  savedProjectsCount?: number;
+  onTogglePro?: () => void;
+  onOpenSavedProjectsModal?: () => void;
 }
 
 export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
@@ -32,6 +38,10 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
   totalMediaCount,
   clustersCount,
   postsCount,
+  isPro = false,
+  savedProjectsCount = 0,
+  onTogglePro,
+  onOpenSavedProjectsModal,
 }) => {
   const [name, setName] = useState(defaultName || 'Visual Story Album');
   const [description, setDescription] = useState(defaultDescription || '');
@@ -39,12 +49,19 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  const isLimitReached = !isPro && savedProjectsCount >= 2;
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setErrorMsg('Please enter a project name.');
+      return;
+    }
+
+    if (isLimitReached) {
+      setErrorMsg('Free plan limit reached (maximum 2 saved projects). Upgrade to Pro for unlimited project saves or delete an existing project.');
       return;
     }
 
@@ -94,6 +111,57 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Tier Usage / Save Limit Status */}
+          {isLimitReached ? (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-400" />
+                <span className="font-bold text-xs">Free Plan Save Limit Reached (2 / 2 Projects)</span>
+              </div>
+              <p className="text-xs text-amber-200/80 leading-relaxed">
+                Free accounts can save up to 2 projects. To save this project, upgrade to Pro for unlimited project saves, or delete an existing saved project to make room.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {onTogglePro && (
+                  <button
+                    type="button"
+                    onClick={onTogglePro}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-sm"
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>Activate Pro (Unlimited Saves)</span>
+                  </button>
+                )}
+                {onOpenSavedProjectsModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenSavedProjectsModal();
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-colors"
+                  >
+                    <Folder className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Manage Saved Projects</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : isPro ? (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+              <div className="flex items-center gap-1.5 font-bold">
+                <Crown className="w-4 h-4 text-amber-400 fill-amber-400/30" />
+                <span>Pro Plan Active</span>
+              </div>
+              <span className="text-[11px] font-semibold text-amber-200/90">Unlimited Saved Projects</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-400 text-xs">
+              <span>Free Plan Project Limit</span>
+              <span className="font-semibold text-slate-200">{savedProjectsCount} / 2 Saved</span>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -172,8 +240,8 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSaving || isSuccess}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98]"
+              disabled={isSaving || isSuccess || isLimitReached}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98] disabled:hover:scale-100"
             >
               {isSaving ? (
                 <>
