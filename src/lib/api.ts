@@ -24,6 +24,19 @@ export async function apiFetch(endpoint: string, options?: RequestInit): Promise
   const primaryUrl = `${API_BASE_URL}${API_PREFIX}${endpoint}`;
   try {
     const res = await fetch(primaryUrl, options);
+    // If the proxy route fails (e.g. 404 or 5xx error from Next.js rewrites/Vercel), fall back directly to remote API
+    if (
+      !res.ok &&
+      (res.status === 404 || res.status >= 500) &&
+      typeof window !== 'undefined' &&
+      API_BASE_URL !== REMOTE_API_URL
+    ) {
+      const fallbackUrl = `${REMOTE_API_URL}${API_PREFIX}${endpoint}`;
+      console.warn(
+        `Proxy request to ${primaryUrl} returned ${res.status}; falling back to direct API ${fallbackUrl}...`
+      );
+      return await fetch(fallbackUrl, options);
+    }
     return res;
   } catch (err: any) {
     if (typeof window !== 'undefined' && API_BASE_URL !== REMOTE_API_URL) {

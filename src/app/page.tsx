@@ -129,20 +129,24 @@ export default function Home() {
     const urlParams = new URLSearchParams(window.location.search);
     let cid = urlParams.get('connection_id');
 
-    if (!cid && typeof window !== 'undefined') {
+    // If returning from OAuth redirect with connection_id in URL, store it and immediately clean the URL
+    if (cid) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('social_connection_id', cid);
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('connection_id');
+        const cleanSearch = cleanUrl.searchParams.toString();
+        const cleanPath = cleanUrl.pathname + (cleanSearch ? `?${cleanSearch}` : '') + cleanUrl.hash;
+        window.history.replaceState({}, '', cleanPath);
+      }
+    } else if (typeof window !== 'undefined') {
       cid = localStorage.getItem('social_connection_id');
     }
 
     if (!cid) {
       cid = 'conn_' + Math.random().toString(36).substring(2, 11);
-    }
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('social_connection_id', cid);
-      const newUrl = new URL(window.location.href);
-      if (newUrl.searchParams.get('connection_id') !== cid) {
-        newUrl.searchParams.set('connection_id', cid);
-        window.history.replaceState({}, '', newUrl.toString());
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('social_connection_id', cid);
       }
     }
 
@@ -152,7 +156,15 @@ export default function Home() {
     // Listen for OAuth completion from popup window
     const handleAuthMessage = (event: MessageEvent) => {
       if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-        getGoogleStatus(cid).then((status) => {
+        const authedCid = event.data?.connection_id || cid;
+        if (authedCid && authedCid !== cid) {
+          cid = authedCid;
+          setConnectionId(authedCid);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('social_connection_id', authedCid);
+          }
+        }
+        getGoogleStatus(authedCid).then((status) => {
           if (status.connected) setGoogleStatus(status);
         });
       }
@@ -161,17 +173,34 @@ export default function Home() {
     return () => window.removeEventListener('message', handleAuthMessage);
   }, []);
 
-  // Poll Google status when not yet connected
+  // Poll Google status when not yet connected, and sync immediately on window focus/visibility
   useEffect(() => {
     if (!connectionId || googleStatus.connected) return;
-    const interval = setInterval(() => {
+
+    const checkStatus = () => {
       getGoogleStatus(connectionId).then((status) => {
         if (status.connected) {
           setGoogleStatus(status);
         }
       });
-    }, 1500);
-    return () => clearInterval(interval);
+    };
+
+    const interval = setInterval(checkStatus, 1500);
+
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        checkStatus();
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
+    };
   }, [connectionId, googleStatus.connected]);
 
   // Sync authenticated user with Supabase `users` table & load presets/projects/pro status
@@ -608,6 +637,23 @@ export default function Home() {
     setCurrentStep('upload');
   };
 
+  const handleDisconnectGoogle = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('social_connection_id');
+      localStorage.removeItem('mediamind_is_pro');
+    }
+    const newCid = 'conn_' + Math.random().toString(36).substring(2, 11);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('social_connection_id', newCid);
+    }
+    setConnectionId(newCid);
+    setGoogleStatus({ connected: false });
+    setSupabaseUserId(null);
+    setIsPro(false);
+    setUserPresets([]);
+    setSavedProjects([]);
+  };
+
   const totalGeneratedPostsCount = Object.values(generatedPosts).filter((p) =>
     Boolean(p.facebook_post || p.instagram_caption || p.twitter_post)
   ).length;
@@ -627,6 +673,7 @@ export default function Home() {
           onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
           isPro={isPro}
           onTogglePro={() => handleTogglePro()}
+          onDisconnect={handleDisconnectGoogle}
         />
 
         {/* Main Content Layout */}

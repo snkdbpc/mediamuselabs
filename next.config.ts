@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const BACKEND_URL =
   process.env.INTERNAL_BACKEND_URL ||
   process.env.BACKEND_URL ||
-  "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_MEDIAMUSELABS_API_URL ||
+  process.env.NEXT_PUBLIC_MEDIAMIND_API_URL ||
+  "https://api.mediamuselabs.com";
 
 const nextConfig: NextConfig = {
   httpAgentOptions: {

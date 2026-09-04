@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { CheckCircle2, Sparkles, Folder, Crown, Zap } from 'lucide-react';
+import { CheckCircle2, Sparkles, Folder, Crown, Zap, LogOut } from 'lucide-react';
 import { CreatorProfile, GoogleAccountStatus } from '../types/mediamind';
 import { getGoogleLoginUrl } from '../lib/api';
 import logoImg from '../app/mediamuselabs_logo.png';
@@ -15,6 +15,7 @@ interface HeaderProps {
   onOpenSavedProjectsModal?: () => void;
   isPro?: boolean;
   onTogglePro?: () => void;
+  onDisconnect?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSavedProjectsModal,
   isPro = false,
   onTogglePro,
+  onDisconnect,
 }) => {
   const profileLabel = creatorProfile.name || creatorProfile.profession || 'your visual story';
   const googleLoginUrl = getGoogleLoginUrl(connectionId);
@@ -138,6 +140,15 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
                 <span className="text-[10px] text-emerald-400">Google Account Sync Active</span>
               </div>
+              {onDisconnect && (
+                <button
+                  onClick={onDisconnect}
+                  title="Disconnect Google Account & reset session"
+                  className="ml-1 p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           ) : (
             <button
