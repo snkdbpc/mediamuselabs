@@ -9,6 +9,7 @@ import { Step1Upload } from '../components/Step1Upload';
 import { Step3SocialCenter } from '../components/Step3SocialCenter';
 import { SavedProjectsModal } from '../components/SavedProjectsModal';
 import { SaveProjectModal } from '../components/SaveProjectModal';
+import { Footer } from '../components/Footer';
 import {
   AppStep,
   Cluster,
@@ -19,6 +20,7 @@ import {
   UploadedFileItem,
   UserPreset,
   SavedProjectSummary,
+  AnalyzeProgress,
 } from '../types/mediamind';
 import {
   createClusters,
@@ -30,6 +32,7 @@ import {
 import { uploadOriginalFilesBatch } from '../lib/r2';
 import {
   syncUserWithSupabase,
+  updateUserProStatus,
   fetchUserPresets,
   saveUserPreset,
   saveProjectToSupabase,
@@ -42,6 +45,38 @@ export default function Home() {
   const [connectionId, setConnectionId] = useState<string>('');
   const [googleStatus, setGoogleStatus] = useState<GoogleAccountStatus>({ connected: false });
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+
+  // Pro user state (infinite data upload)
+  const [isPro, setIsPro] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('mediamind_is_pro') === 'true';
+      if (stored) {
+        setIsPro(true);
+        setCreatorProfile((prev) => ({ ...prev, is_pro: true }));
+      }
+    }
+  }, []);
+
+  const handleTogglePro = (nextVal?: boolean) => {
+    setIsPro((prev) => {
+      const val = nextVal !== undefined ? nextVal : !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mediamind_is_pro', String(val));
+      }
+      setCreatorProfile((cp) => ({ ...cp, is_pro: val }));
+
+      // Immediately persist to Supabase users table if user is signed in
+      if (supabaseUserId) {
+        updateUserProStatus(supabaseUserId, val).catch((err) => {
+          console.warn('Unable to sync pro status to users table:', err);
+        });
+      }
+
+      return val;
+    });
+  };
 
   // User presets state (from Supabase user_presets table)
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
@@ -75,6 +110,12 @@ export default function Home() {
   const [scoredMetadata, setScoredMetadata] = useState<Record<string, ScoredClusterMetadata>>({});
 
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [analyzeProgress, setAnalyzeProgress] = useState<AnalyzeProgress>({
+    progress: 0,
+    stageText: '',
+    stageSubtitle: '',
+    status: 'idle',
+  });
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [streamProgress, setStreamProgress] = useState<{
     completed: number;
@@ -132,13 +173,23 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [connectionId, googleStatus.connected]);
 
-  // Sync authenticated user with Supabase `users` table & load presets/projects
+  // Sync authenticated user with Supabase `users` table & load presets/projects/pro status
   useEffect(() => {
     if (!googleStatus.connected || !googleStatus.email) return;
 
-    syncUserWithSupabase(googleStatus).then((userId) => {
-      if (userId) {
+    syncUserWithSupabase(googleStatus).then((syncRes) => {
+      if (syncRes && syncRes.userId) {
+        const userId = syncRes.userId;
         setSupabaseUserId(userId);
+
+        // Synchronize Pro Status fetched directly from Supabase users table
+        const serverIsPro = Boolean(syncRes.isPro);
+        console.log('[Auth Sync] Loaded is_pro from Supabase users table:', serverIsPro);
+        setIsPro(serverIsPro);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('mediamind_is_pro', String(serverIsPro));
+        }
+        setCreatorProfile((prev) => ({ ...prev, is_pro: serverIsPro }));
 
         // Load saved user presets
         fetchUserPresets(userId).then((presets) => {
@@ -157,6 +208,7 @@ export default function Home() {
               target_audience: p0.target_audience || prev.target_audience,
               target_age_groups: p0.target_age_groups || prev.target_age_groups,
               target_age_group: p0.target_age_groups?.[0] || prev.target_age_group,
+              is_pro: serverIsPro,
             }));
           }
         });
@@ -256,10 +308,26 @@ export default function Home() {
     }
 
     setIsAnalyzing(true);
+    setAnalyzeProgress({
+      progress: 8,
+      stageText: 'Preparing photos for AI analysis...',
+      stageSubtitle: 'Optimizing payload and generating lightning-fast previews',
+      status: 'running',
+    });
+
+    let progressTimer: NodeJS.Timeout | null = null;
+
     try {
       // 1. Upload lightweight images to backend for fast clustering analysis
       const lightweightFiles = activeItems.map((item) => item.compressedFile || item.file);
-      const uploadRes = await uploadAlbum(lightweightFiles, connectionId);
+      setAnalyzeProgress({
+        progress: 22,
+        stageText: 'Uploading photos to neural engine...',
+        stageSubtitle: 'Streaming lightweight images to clustering pipeline',
+        status: 'running',
+      });
+
+      const uploadRes = await uploadAlbum(lightweightFiles, connectionId, isPro, supabaseUserId);
       const newAlbumId = uploadRes.album_id;
       setAlbumId(newAlbumId);
 
@@ -268,6 +336,13 @@ export default function Home() {
       const indexMap: Record<string, number> = {};
       filenames.forEach((name, idx) => {
         indexMap[name] = idx;
+      });
+
+      setAnalyzeProgress({
+        progress: 42,
+        stageText: 'Preserving full-res originals in bucket storage...',
+        stageSubtitle: 'Safeguarding high-resolution data and full EXIF metadata in parallel',
+        status: 'running',
       });
 
       // 3. Parallel Execution during Clustering Phase:
@@ -288,8 +363,38 @@ export default function Home() {
       // (b) Run clustering analysis on the backend
       const clusterPromise = createClusters(newAlbumId, filenames, indexMap, albumDescription);
 
+      // Dynamic progress advancement during deep feature extraction & clustering
+      progressTimer = setInterval(() => {
+        setAnalyzeProgress((prev) => {
+          if (prev.progress >= 96) return prev;
+          const next = Math.min(96, prev.progress + 3.5);
+          let text = prev.stageText;
+          let subtitle = prev.stageSubtitle;
+          if (next >= 55 && next < 75) {
+            text = 'Extracting deep visual semantics with SigLIP...';
+            subtitle = 'Analyzing lighting, scene features, and thematic motifs';
+          } else if (next >= 75 && next < 90) {
+            text = 'Grouping photos into visual stories & scenes...';
+            subtitle = 'Computing semantic affinity graph & community clusters';
+          } else if (next >= 90) {
+            text = 'Evaluating image quality & best shots with Florence-2...';
+            subtitle = 'Ranking cluster representatives and generating rich descriptive tags';
+          }
+          return { ...prev, progress: next, stageText: text, stageSubtitle: subtitle };
+        });
+      }, 250);
+
       // Wait for both clustering and original photo sync to complete
       const [, clusterRes] = await Promise.all([storageSyncPromise, clusterPromise]);
+      if (progressTimer) clearInterval(progressTimer);
+
+      setAnalyzeProgress({
+        progress: 100,
+        stageText: 'Analysis complete! Launching Social Studio...',
+        stageSubtitle: 'Preparing your personalized Social Media Studio',
+        status: 'completed',
+      });
+
       setClusters(clusterRes.clusters);
 
       // Initialize scored metadata from cluster representatives
@@ -320,8 +425,18 @@ export default function Home() {
         });
 
       setScoredMetadata(initialScored);
+
+      // Brief delay to let the user see the 100% completion pulse
+      await new Promise((resolve) => setTimeout(resolve, 450));
       setCurrentStep('finalize');
     } catch (err: any) {
+      if (progressTimer) clearInterval(progressTimer);
+      setAnalyzeProgress({
+        progress: 0,
+        stageText: 'Clustering failed',
+        stageSubtitle: String(err.message || err),
+        status: 'error',
+      });
       alert(`Clustering failed: ${err.message || err}`);
     } finally {
       setIsAnalyzing(false);
@@ -396,13 +511,14 @@ export default function Home() {
       return false;
     }
 
+    const activeItems = uploadedFiles.filter((f) => f.included);
     const res = await saveProjectToSupabase({
       userId: supabaseUserId,
       name,
       description,
       status: 'finalized',
-      creatorProfile,
-      files: uploadedFiles,
+      creatorProfile: { ...creatorProfile, is_pro: isPro },
+      files: activeItems.length > 0 ? activeItems : uploadedFiles,
       clusters,
       posts: generatedPosts,
       scoredMetadata,
@@ -438,11 +554,15 @@ export default function Home() {
           target_audience: data.preset.target_audience,
           target_age_group: data.preset.target_age_groups?.[0] || '18-24',
           professional: data.preset.professional,
+          is_pro: data.preset.is_pro ?? isPro,
           publishing_preference: data.preset.publishing_preference,
           target_age_groups: data.preset.target_age_groups,
           preset_id: data.preset.id,
           preset_name: data.preset.name,
         });
+        if (data.preset.is_pro !== undefined) {
+          setIsPro(data.preset.is_pro);
+        }
       }
 
       // 2. Restore Project State
@@ -488,22 +608,25 @@ export default function Home() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-slate-100 relative w-full">
+    <div className="min-h-screen flex flex-col justify-between bg-[#0B0F19] text-slate-100 relative w-full">
       <div className="ambient-glow" />
 
-      <main className="relative z-10 w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-16">
+      <main className="relative z-10 w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-16 flex-1">
         {/* Top Header with Saved Projects Trigger */}
+        {/* Top Header with Saved Projects Trigger and Pro Membership */}
         <Header
           creatorProfile={creatorProfile}
           googleStatus={googleStatus}
           connectionId={connectionId}
           savedProjectsCount={savedProjects.length}
           onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
+          isPro={isPro}
+          onTogglePro={() => handleTogglePro()}
         />
 
         {/* Main Content Layout */}
         <div className="flex flex-col lg:flex-row items-start gap-8 w-full">
-          {/* Sidebar Creator Profile & Presets */}
+          {/* Sidebar Creator Profile, Pro Plan & Presets */}
           <Sidebar
             profile={creatorProfile}
             onChange={setCreatorProfile}
@@ -514,6 +637,8 @@ export default function Home() {
             savePresetOnNextStep={savePresetOnNextStep}
             onToggleSavePresetOnNextStep={setSavePresetOnNextStep}
             onManualSavePreset={handleManualSavePreset}
+            isPro={isPro}
+            onTogglePro={handleTogglePro}
           />
 
           {/* Workflow Center */}
@@ -535,6 +660,9 @@ export default function Home() {
                 onAnalyze={handleAnalyzeAlbum}
                 onReset={handleResetApp}
                 isLoading={isAnalyzing}
+                analyzeProgress={analyzeProgress}
+                isPro={isPro}
+                onTogglePro={() => handleTogglePro()}
               />
             )}
 
@@ -543,7 +671,7 @@ export default function Home() {
                 clusters={clusters}
                 posts={generatedPosts}
                 scoredMetadata={scoredMetadata}
-                files={uploadedFiles}
+                files={uploadedFiles.filter((item) => item.included)}
                 creatorProfile={creatorProfile}
                 connectionId={connectionId}
                 userId={supabaseUserId}
@@ -561,6 +689,16 @@ export default function Home() {
           </div>
         </div>
       </main>
+ 
+      {/* Footer Section */}
+      <Footer
+        isPro={isPro}
+        onTogglePro={() => handleTogglePro()}
+        savedProjectsCount={savedProjects.length}
+        onOpenSavedProjectsModal={
+          googleStatus.connected ? () => setIsSavedProjectsModalOpen(true) : undefined
+        }
+      />
 
       {/* Saved Projects Modal */}
       <SavedProjectsModal

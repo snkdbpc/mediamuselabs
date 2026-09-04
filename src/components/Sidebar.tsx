@@ -12,6 +12,8 @@ import {
   Save,
   Loader2,
   Share2,
+  Crown,
+  Infinity as InfinityIcon,
 } from 'lucide-react';
 import { CreatorProfile, UserPreset } from '../types/mediamind';
 
@@ -25,6 +27,8 @@ interface SidebarProps {
   savePresetOnNextStep?: boolean;
   onToggleSavePresetOnNextStep?: (save: boolean) => void;
   onManualSavePreset?: (presetName: string) => Promise<boolean>;
+  isPro?: boolean;
+  onTogglePro?: (isPro: boolean) => void;
 }
 
 const AGE_GROUP_OPTIONS = ['13-17', '18-24', '25-34', '35-44', '45-54', '55+', 'All ages'];
@@ -40,6 +44,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   savePresetOnNextStep = true,
   onToggleSavePresetOnNextStep,
   onManualSavePreset,
+  isPro = false,
+  onTogglePro,
 }) => {
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
@@ -129,6 +135,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
               Cloud Sync
             </span>
+          )}
+        </div>
+
+        {/* Pro Membership Card */}
+        <div
+          className={`p-3.5 rounded-2xl border transition-all duration-200 ${
+            isPro
+              ? 'bg-gradient-to-br from-amber-500/15 via-purple-900/20 to-indigo-950/40 border-amber-500/40 shadow-lg shadow-amber-500/5'
+              : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                  isPro
+                    ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                <Crown className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-xs text-slate-100">Pro Plan</span>
+                  {isPro ? (
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                      UNLIMITED
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                      Free Tier
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 truncate">
+                  {isPro ? 'Infinite data upload active' : 'Max 30 photos / 300MB'}
+                </p>
+              </div>
+            </div>
+
+            {onTogglePro && (
+              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-2">
+                <input
+                  type="checkbox"
+                  checked={isPro}
+                  onChange={(e) => onTogglePro(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-amber-500 peer-checked:to-purple-600"></div>
+              </label>
+            )}
+          </div>
+
+          {isPro && (
+            <div className="mt-2 pt-2 border-t border-amber-500/20 text-[10px] text-amber-200/90 flex items-center gap-1.5">
+              <InfinityIcon className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+              <span>Upload unlimited photos with zero size caps</span>
+            </div>
           )}
         </div>
 

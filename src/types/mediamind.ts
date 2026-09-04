@@ -8,6 +8,7 @@ export interface CreatorProfile {
   target_audience: string;
   target_age_group: string;
   professional?: boolean;
+  is_pro?: boolean;
   publishing_preference?: Record<string, boolean>;
   target_age_groups?: string[];
   preset_id?: string;
@@ -20,11 +21,19 @@ export interface UserPreset {
   name: string;
   user_type: string;
   professional: boolean;
+  is_pro?: boolean;
   publishing_preference: Record<string, boolean>;
   target_audience: string;
   target_age_groups: string[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface AnalyzeProgress {
+  progress: number;
+  stageText: string;
+  stageSubtitle?: string;
+  status: 'idle' | 'running' | 'completed' | 'error';
 }
 
 export interface ImageDetail {
@@ -179,5 +188,11 @@ export interface PublishResult {
   post_id?: string;
   post_url?: string;
   error?: string;
+}
+
+export interface UserSyncResponse {
+  userId: string;
+  isPro: boolean;
+  user?: any;
 }
 

@@ -90,6 +90,35 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
   const [scoreThreshold, setScoreThreshold] = useState<number>(DEFAULT_SCORE_THRESHOLD);
   const [selectedImagePerCluster, setSelectedImagePerCluster] = useState<Record<string, number>>({});
 
+  // Active/Included files resolution to guarantee correct sequence matching
+  const activeFiles = React.useMemo(() => {
+    const included = files.filter((f) => f.included !== false);
+    return included.length > 0 ? included : files;
+  }, [files]);
+
+  const resolveFileItem = React.useCallback(
+    (imgIdx: number, filename?: string): UploadedFileItem | undefined => {
+      if (filename) {
+        const found =
+          activeFiles.find(
+            (f) =>
+              f.name === filename ||
+              f.originalName === filename ||
+              f.file?.name === filename
+          ) ||
+          files.find(
+            (f) =>
+              f.name === filename ||
+              f.originalName === filename ||
+              f.file?.name === filename
+          );
+        if (found) return found;
+      }
+      return activeFiles[imgIdx] || files[imgIdx];
+    },
+    [activeFiles, files]
+  );
+
   // Default selected N per cluster
   useEffect(() => {
     const initialN: Record<string, number> = {};
@@ -627,15 +656,26 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
         const allRankedItems =
           reps.length > 0
             ? reps.map((rep: any, rank: number) => {
+                const filename = rep.filename || (rep.path ? rep.path.split('/').pop() : undefined);
                 let imgIdx = rep.image_idx;
-                if (imgIdx === undefined && rep.filename) {
-                  const matchIdx = files.findIndex(
+                if (imgIdx === undefined && filename) {
+                  const matchIdx = activeFiles.findIndex(
                     (f) =>
-                      f.name === rep.filename ||
-                      f.file.name === rep.filename ||
-                      f.originalName === rep.filename
+                      f.name === filename ||
+                      f.file?.name === filename ||
+                      f.originalName === filename
                   );
-                  if (matchIdx !== -1) imgIdx = matchIdx;
+                  if (matchIdx !== -1) {
+                    imgIdx = matchIdx;
+                  } else {
+                    const fallbackMatch = files.findIndex(
+                      (f) =>
+                        f.name === filename ||
+                        f.file?.name === filename ||
+                        f.originalName === filename
+                    );
+                    if (fallbackMatch !== -1) imgIdx = fallbackMatch;
+                  }
                 }
                 if (imgIdx === undefined) {
                   imgIdx = cluster.all_image_indices[rank] ?? rank;
@@ -643,6 +683,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                 const rawQuality = rep.quality_score ?? 0.88;
                 return {
                   imgIdx,
+                  filename,
                   rawQuality,
                   absoluteScore: toAbsoluteScore(rawQuality),
                   rank: rank + 1,
@@ -652,6 +693,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                 const rawQuality = Math.max(0.65, 0.95 - rank * 0.05);
                 return {
                   imgIdx,
+                  filename: undefined,
                   rawQuality,
                   absoluteScore: toAbsoluteScore(rawQuality),
                   rank: rank + 1,
@@ -675,7 +717,10 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
         // Default to the best image (Rank #1 / highest score)
         const defaultBestImgIdx = itemsToDisplay[0]?.imgIdx ?? cluster.all_image_indices[0];
         const currentSelectedImgIdx = selectedImagePerCluster[cId] ?? defaultBestImgIdx;
-        const currentSelectedFile = files[currentSelectedImgIdx];
+        const currentSelectedFile = resolveFileItem(
+          currentSelectedImgIdx,
+          itemsToDisplay.find((item) => item.imgIdx === currentSelectedImgIdx)?.filename
+        );
 
         const activeTabKey = activeTab[cId] || 'fb';
         const hasClusterPost = Boolean(
@@ -831,8 +876,8 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                     ? 'grid-cols-1 sm:grid-cols-2 max-w-2xl'
                     : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
                 }`}>
-                  {itemsToDisplay.map(({ imgIdx, absoluteScore, rank }) => {
-                    const fileItem = files[imgIdx];
+                  {itemsToDisplay.map(({ imgIdx, filename, absoluteScore, rank }) => {
+                    const fileItem = resolveFileItem(imgIdx, filename);
                     const isSelected = imgIdx === currentSelectedImgIdx;
 
                     return (

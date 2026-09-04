@@ -70,9 +70,20 @@ export async function getFacebookLoginUrl(connectionId: string): Promise<string 
   }
 }
 
-export async function uploadAlbum(files: File[], connectionId: string): Promise<{ album_id: string }> {
+export async function uploadAlbum(
+  files: File[],
+  connectionId: string,
+  isPro?: boolean,
+  userId?: string | null
+): Promise<{ album_id: string }> {
   const formData = new FormData();
   formData.append('connection_id', connectionId);
+  if (isPro) {
+    formData.append('is_pro', 'true');
+  }
+  if (userId) {
+    formData.append('user_id', userId);
+  }
   files.forEach((file) => {
     formData.append('files', file);
   });

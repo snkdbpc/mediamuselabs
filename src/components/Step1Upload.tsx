@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Upload,
   Image as ImageIcon,
@@ -19,8 +19,11 @@ import {
   X,
   Sliders,
   Maximize2,
+  Crown,
+  Zap,
+  Sparkles,
 } from 'lucide-react';
-import { UploadedFileItem } from '../types/mediamind';
+import { UploadedFileItem, AnalyzeProgress } from '../types/mediamind';
 import { getGoogleLoginUrl, compressImageToJpeg, getDisplayPreviewUrl } from '../lib/api';
 import { parseExifFromFile } from '../lib/exif';
 
@@ -34,11 +37,24 @@ interface Step1UploadProps {
   onAnalyze: () => void;
   onReset: () => void;
   isLoading: boolean;
+  analyzeProgress?: AnalyzeProgress;
+  isPro?: boolean;
+  onTogglePro?: () => void;
 }
 
 const MAX_UPLOAD_IMAGES = 30;
 const MAX_UPLOAD_SIZE_MB = 300;
 const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+
+const PROGRESS_STAGES = [
+  { min: 0, max: 18, text: 'Preparing photos for AI analysis...', subtitle: 'Optimizing payload and generating lightning-fast previews' },
+  { min: 18, max: 38, text: 'Uploading photos to neural engine...', subtitle: 'Streaming lightweight images to clustering pipeline' },
+  { min: 38, max: 58, text: 'Preserving full-res originals in bucket storage...', subtitle: 'Safeguarding high-resolution data and full EXIF metadata in parallel' },
+  { min: 58, max: 76, text: 'Extracting deep visual semantics with SigLIP...', subtitle: 'Analyzing lighting, scene features, and thematic motifs' },
+  { min: 76, max: 90, text: 'Grouping photos into visual stories & scenes...', subtitle: 'Computing semantic affinity graph & community clusters' },
+  { min: 90, max: 98, text: 'Evaluating image quality & best shots with Florence-2...', subtitle: 'Ranking cluster representatives and generating rich descriptive tags' },
+  { min: 98, max: 101, text: 'Analysis complete! Launching Social Studio...', subtitle: 'Preparing your personalized Social Media Studio' },
+];
 
 export const Step1Upload: React.FC<Step1UploadProps> = ({
   files,
@@ -50,11 +66,47 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
   onAnalyze,
   onReset,
   isLoading,
+  analyzeProgress,
+  isPro = false,
+  onTogglePro,
 }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPreparing, setIsPreparing] = useState<boolean>(false);
   const [selectedExifItem, setSelectedExifItem] = useState<UploadedFileItem | null>(null);
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+  const [internalProgress, setInternalProgress] = useState<number>(0);
+
   const googleLoginUrl = getGoogleLoginUrl(connectionId);
+
+  // Smooth progress progression timer during clustering analysis
+  useEffect(() => {
+    if (!isLoading) {
+      setInternalProgress(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setInternalProgress((prev) => {
+        if (prev >= 98) return 98;
+        const increment = prev < 25 ? 3.5 : prev < 65 ? 2.2 : prev < 88 ? 1.4 : 0.6;
+        return Math.min(98, prev + increment);
+      });
+    }, 220);
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  const currentProgress =
+    analyzeProgress?.progress && analyzeProgress.progress > 0
+      ? analyzeProgress.progress
+      : internalProgress;
+
+  const activeStage =
+    PROGRESS_STAGES.find((s) => currentProgress >= s.min && currentProgress < s.max) ||
+    PROGRESS_STAGES[PROGRESS_STAGES.length - 1];
+
+  const displayStageText = analyzeProgress?.stageText || activeStage.text;
+  const displayStageSubtitle = analyzeProgress?.stageSubtitle || activeStage.subtitle;
 
   const handleGoogleLogin = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -80,15 +132,16 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
     const selectedFiles = Array.from(e.target.files);
     setErrorMsg(null);
 
-    if (files.length + selectedFiles.length > MAX_UPLOAD_IMAGES) {
-      setErrorMsg(`Please select no more than ${MAX_UPLOAD_IMAGES} images.`);
+    // Pro users have infinite data upload - no limits!
+    if (!isPro && files.length + selectedFiles.length > MAX_UPLOAD_IMAGES) {
+      setErrorMsg(`Free plan allows up to ${MAX_UPLOAD_IMAGES} images. Enable Pro Mode for infinite data uploads!`);
       return;
     }
 
     const currentTotalSize = files.reduce((acc, f) => acc + f.size, 0);
     const newTotalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
-    if (currentTotalSize + newTotalSize > MAX_UPLOAD_SIZE_BYTES) {
-      setErrorMsg(`Total upload size exceeds ${MAX_UPLOAD_SIZE_MB}MB limit.`);
+    if (!isPro && currentTotalSize + newTotalSize > MAX_UPLOAD_SIZE_BYTES) {
+      setErrorMsg(`Free plan upload size exceeds ${MAX_UPLOAD_SIZE_MB}MB limit. Enable Pro Mode for infinite data uploads!`);
       return;
     }
 
@@ -129,10 +182,26 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
     }
   };
 
-  const toggleInclude = (id: string) => {
-    onFilesChange(
-      files.map((item) => (item.id === id ? { ...item, included: !item.included } : item))
-    );
+  // Support sequence range selection with Shift+Click
+  const handleToggleInclude = (index: number, e?: React.MouseEvent) => {
+    if (e?.shiftKey && lastClickedIndex !== null && lastClickedIndex !== index) {
+      const start = Math.min(lastClickedIndex, index);
+      const end = Math.max(lastClickedIndex, index);
+      const targetState = !files[index].included;
+      onFilesChange(
+        files.map((item, idx) => {
+          if (idx >= start && idx <= end) {
+            return { ...item, included: targetState };
+          }
+          return item;
+        })
+      );
+    } else {
+      onFilesChange(
+        files.map((item, idx) => (idx === index ? { ...item, included: !item.included } : item))
+      );
+      setLastClickedIndex(index);
+    }
   };
 
   const activeFiles = files.filter((f) => f.included);
@@ -160,9 +229,22 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               <Upload className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-100">📥 Upload Album</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-100">📥 Upload Album</h2>
+                {isPro ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-indigo-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-sm">
+                    <Crown className="w-3 h-3 text-amber-400" /> PRO INFINITE
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Free Tier
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
-                Choose up to {MAX_UPLOAD_IMAGES} images to analyze and cluster automatically.
+                {isPro
+                  ? 'Infinite data mode: Upload unlimited images with no size caps to analyze & cluster automatically.'
+                  : `Choose up to ${MAX_UPLOAD_IMAGES} images (or unlimited with Pro) to analyze and cluster automatically.`}
               </p>
             </div>
           </div>
@@ -255,16 +337,54 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                 )}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                Max {MAX_UPLOAD_IMAGES} images (up to {MAX_UPLOAD_SIZE_MB}MB) • EXIF, GPS & timestamps preserved
+                {isPro ? (
+                  <span className="text-amber-300/90 font-medium flex items-center justify-center gap-1">
+                    <Crown className="w-3.5 h-3.5 text-amber-400" />
+                    PRO Infinite Mode Active • Unlimited photos & data size • EXIF & GPS preserved
+                  </span>
+                ) : (
+                  `Max ${MAX_UPLOAD_IMAGES} images (up to ${MAX_UPLOAD_SIZE_MB}MB) • EXIF, GPS & timestamps preserved`
+                )}
               </p>
             </div>
           </div>
         </div>
 
+        {/* Pro Switch suggestion banner for free users */}
+        {!isPro && onTogglePro && (
+          <div className="mt-3 p-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-transparent border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-2 text-amber-200">
+              <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span>Need to upload more than 30 images? Pro users get infinite data uploads.</span>
+            </div>
+            <button
+              type="button"
+              onClick={onTogglePro}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm flex-shrink-0"
+            >
+              <Zap className="w-3 h-3 text-amber-400" /> Enable Pro Mode
+            </button>
+          </div>
+        )}
+
         {errorMsg && (
-          <p className="text-rose-400 text-xs font-semibold mt-3 flex items-center gap-1.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {errorMsg}
-          </p>
+          <div className="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+            <p className="text-rose-400 font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {errorMsg}
+            </p>
+            {!isPro && onTogglePro && (
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMsg(null);
+                  onTogglePro();
+                }}
+                className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-400 hover:to-purple-500 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center gap-1 flex-shrink-0"
+              >
+                <Crown className="w-3.5 h-3.5" /> Unlock Pro (Infinite Data)
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -297,10 +417,50 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                 <span>Deselect All</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => onFilesChange(files.map((f) => ({ ...f, included: !f.included })))}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700 hover:border-indigo-500/50 transition-colors shadow-sm"
+                title="Invert current selection"
+              >
+                <span>Invert</span>
+              </button>
+
+              {filesWithGps.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFilesChange(
+                      files.map((f) => ({
+                        ...f,
+                        included: Boolean(f.exif?.formattedCoordinates),
+                      }))
+                    )
+                  }
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors shadow-sm"
+                  title="Select only photos with GPS coordinates"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>GPS Only ({filesWithGps.length})</span>
+                </button>
+              )}
+
               <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                {activeFiles.length} included
+                {activeFiles.length} / {files.length} selected
               </span>
             </div>
+          </div>
+
+          {/* Sequence Selection Helper Tip */}
+          <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400">
+            <Info className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+            <span>
+              <strong className="text-slate-200">Sequence Selection:</strong> Click to toggle individual photos. Hold{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 font-mono text-[10px] font-bold">
+                Shift
+              </kbd>{' '}
+              while clicking another photo to select or deselect the entire sequence in between.
+            </span>
           </div>
 
           {/* Album Metadata Summary Banner */}
@@ -332,24 +492,27 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
             </div>
           )}
 
-          {/* Image Grid with EXIF Badges */}
+          {/* Image Grid with Sequence Numbers & EXIF Badges */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
-            {files.map((item) => {
+            {files.map((item, idx) => {
               const exif = item.exif;
               const hasExif = !!exif;
               const deviceLabel = exif ? [exif.make, exif.model].filter(Boolean).join(' ') : null;
+              const sequenceNum = item.included
+                ? activeFiles.findIndex((f) => f.id === item.id) + 1
+                : null;
 
               return (
                 <div
                   key={item.id}
                   className={`relative group rounded-2xl overflow-hidden border transition-all duration-200 ${
                     item.included
-                      ? 'border-indigo-500/40 bg-slate-900/80 shadow-md shadow-indigo-500/10'
-                      : 'border-slate-800 bg-slate-950/80 opacity-40 grayscale'
+                      ? 'border-indigo-500/40 bg-slate-900/80 shadow-md shadow-indigo-500/10 ring-1 ring-indigo-500/30'
+                      : 'border-slate-800 bg-slate-950/80 opacity-40 grayscale hover:opacity-60'
                   }`}
                 >
                   <div
-                    onClick={() => toggleInclude(item.id)}
+                    onClick={(e) => handleToggleInclude(idx, e)}
                     className="aspect-square relative overflow-hidden bg-slate-950 cursor-pointer"
                   >
                     <img
@@ -366,8 +529,14 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                       }}
                     />
 
-                    {/* Include checkbox */}
-                    <div className="absolute top-2 right-2 z-10">
+                    {/* Include checkbox with Shift-click support */}
+                    <div
+                      className="absolute top-2 right-2 z-10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleInclude(idx, e);
+                      }}
+                    >
                       {item.included ? (
                         <CheckSquare className="w-5 h-5 text-indigo-400 bg-slate-900/90 rounded" />
                       ) : (
@@ -375,12 +544,22 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                       )}
                     </div>
 
-                    {/* GPS Tag Overlay on thumbnail */}
-                    {exif?.formattedCoordinates && (
-                      <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-slate-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
-                        <MapPin className="w-3 h-3 text-emerald-400" /> GPS
-                      </div>
-                    )}
+                    {/* Sequence and GPS Tag Overlays on thumbnail */}
+                    <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 items-start">
+                      {sequenceNum !== null && (
+                        <div
+                          className="flex items-center gap-1 bg-indigo-600/95 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-extrabold text-white border border-indigo-400/40 shadow-md"
+                          title={`Selected in Sequence: #${sequenceNum}`}
+                        >
+                          <span>#{sequenceNum}</span>
+                        </div>
+                      )}
+                      {exif?.formattedCoordinates && (
+                        <div className="flex items-center gap-1 bg-slate-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                          <MapPin className="w-3 h-3 text-emerald-400" /> GPS
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Card Content & EXIF Badges */}
@@ -471,6 +650,118 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
             </p>
           </div>
 
+          {/* Progress Bar with Percentage and Dynamic Changing Text */}
+          {isLoading && (
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-indigo-950/40 to-purple-950/40 border border-indigo-500/50 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 flex-shrink-0 animate-pulse">
+                    <Sparkles className="w-5 h-5 animate-spin" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                        {displayStageText}
+                      </h4>
+                    </div>
+                    <p className="text-xs text-indigo-300/80 mt-0.5">
+                      {displayStageSubtitle}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-baseline gap-1.5 self-end sm:self-auto flex-shrink-0">
+                  <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 tabular-nums">
+                    {Math.round(currentProgress)}%
+                  </span>
+                  <span className="text-xs text-slate-400 font-semibold">completed</span>
+                </div>
+              </div>
+
+              {/* Progress Bar Track */}
+              <div className="w-full h-3.5 bg-slate-950/90 rounded-full p-0.5 border border-indigo-500/30 overflow-hidden relative shadow-inner">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-300 relative shadow-md shadow-indigo-500/50"
+                  style={{ width: `${Math.max(4, Math.min(100, currentProgress))}%` }}
+                >
+                  {/* Subtle shine pulse */}
+                  <div className="absolute inset-0 bg-white/20 rounded-full animate-pulse" />
+                </div>
+              </div>
+
+              {/* Dynamic 4-Stage Step Indicators */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                <div
+                  className={`p-2 rounded-xl border flex items-center gap-2 transition-all ${
+                    currentProgress >= 20
+                      ? 'bg-indigo-950/60 border-indigo-500/50 text-indigo-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-500'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      currentProgress >= 20 ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {currentProgress >= 20 ? '✓' : '1'}
+                  </div>
+                  <span className="font-semibold truncate">1. Optimize & Upload</span>
+                </div>
+
+                <div
+                  className={`p-2 rounded-xl border flex items-center gap-2 transition-all ${
+                    currentProgress >= 45
+                      ? 'bg-indigo-950/60 border-indigo-500/50 text-indigo-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-500'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      currentProgress >= 45 ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {currentProgress >= 45 ? '✓' : '2'}
+                  </div>
+                  <span className="font-semibold truncate">2. Cloud Sync</span>
+                </div>
+
+                <div
+                  className={`p-2 rounded-xl border flex items-center gap-2 transition-all ${
+                    currentProgress >= 75
+                      ? 'bg-indigo-950/60 border-indigo-500/50 text-indigo-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-500'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      currentProgress >= 75 ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {currentProgress >= 75 ? '✓' : '3'}
+                  </div>
+                  <span className="font-semibold truncate">3. SigLIP Semantic Graph</span>
+                </div>
+
+                <div
+                  className={`p-2 rounded-xl border flex items-center gap-2 transition-all ${
+                    currentProgress >= 95
+                      ? 'bg-indigo-950/60 border-indigo-500/50 text-indigo-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-500'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      currentProgress >= 98 ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {currentProgress >= 98 ? '✓' : '4'}
+                  </div>
+                  <span className="font-semibold truncate">4. Florence-2 Ranking</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Analyze Button */}
           <div className="flex justify-end pt-2">
             <button
@@ -481,12 +772,12 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Analyzing Your Photos...</span>
+                  <span>Analyzing ({Math.round(currentProgress)}%)...</span>
                 </>
               ) : (
                 <>
                   <Rocket className="w-4 h-4" />
-                  <span>Let Go!</span>
+                  <span>Lets Go!</span>
                 </>
               )}
             </button>

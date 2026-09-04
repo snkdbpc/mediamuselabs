@@ -9,15 +9,16 @@ import {
   GoogleAccountStatus,
   SavedProjectSummary,
   LoadedProjectData,
+  UserSyncResponse,
 } from '../types/mediamind';
 
 /**
  * Sync logged-in Google user via the FastAPI backend to Supabase `users` table.
- * Returns the Supabase user UUID.
+ * Fetches and returns the Supabase user UUID and is_pro membership status.
  */
 export async function syncUserWithSupabase(
   account: GoogleAccountStatus
-): Promise<string | null> {
+): Promise<UserSyncResponse | null> {
   if (!account.connected || !account.email) {
     return null;
   }
@@ -40,9 +41,63 @@ export async function syncUserWithSupabase(
     }
 
     const data = await res.json();
-    return data.user_id || null;
+    if (!data.user_id) return null;
+
+    return {
+      userId: data.user_id,
+      isPro: Boolean(data.is_pro ?? data.user?.is_pro),
+      user: data.user,
+    };
   } catch (err) {
     console.error('Backend user sync error:', err);
+    return null;
+  }
+}
+
+/**
+ * Persist user's Pro membership tier to Supabase `users` table.
+ */
+export async function updateUserProStatus(
+  userId: string,
+  isPro: boolean
+): Promise<boolean> {
+  if (!userId) return false;
+
+  try {
+    const res = await apiFetch(`/users/${encodeURIComponent(userId)}/pro`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_pro: isPro }),
+    });
+
+    if (!res.ok) {
+      console.warn('Backend update user pro status returned status:', res.status);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Failed to update user pro status in Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch user's Pro membership tier directly from Supabase `users` table.
+ */
+export async function fetchUserProStatus(userId: string): Promise<boolean | null> {
+  if (!userId) return null;
+
+  try {
+    const res = await apiFetch(`/users/${encodeURIComponent(userId)}/pro`, {
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Boolean(data.is_pro);
+  } catch (err) {
+    console.error('Failed to fetch user pro status from Supabase:', err);
     return null;
   }
 }
