@@ -14,8 +14,52 @@ import {
   Share2,
   Crown,
   Infinity as InfinityIcon,
+  Globe,
 } from 'lucide-react';
 import { CreatorProfile, UserPreset } from '../types/mediamind';
+
+export interface LanguageOption {
+  value: string;
+  label: string;
+}
+
+export const LANGUAGE_OPTIONS: LanguageOption[] = [
+  { value: 'English', label: 'English' },
+  { value: 'Spanish', label: 'Spanish (Español)' },
+  { value: 'French', label: 'French (Français)' },
+  { value: 'German', label: 'German (Deutsch)' },
+  { value: 'Italian', label: 'Italian (Italiano)' },
+  { value: 'Portuguese', label: 'Portuguese (Português)' },
+  { value: 'Hindi', label: 'Hindi (हिन्दी)' },
+  { value: 'Japanese', label: 'Japanese (日本語)' },
+  { value: 'Korean', label: 'Korean (한국어)' },
+  { value: 'Chinese (Simplified)', label: 'Chinese - Simplified (简体中文)' },
+  { value: 'Chinese (Traditional)', label: 'Chinese - Traditional (繁體中文)' },
+  { value: 'Arabic', label: 'Arabic (العربية)' },
+  { value: 'Bengali', label: 'Bengali (বাংলা)' },
+  { value: 'Russian', label: 'Russian (Русский)' },
+  { value: 'Dutch', label: 'Dutch (Nederlands)' },
+  { value: 'Turkish', label: 'Turkish (Türkçe)' },
+  { value: 'Polish', label: 'Polish (Polski)' },
+  { value: 'Swedish', label: 'Swedish (Svenska)' },
+  { value: 'Vietnamese', label: 'Vietnamese (Tiếng Việt)' },
+  { value: 'Indonesian', label: 'Indonesian (Bahasa Indonesia)' },
+  { value: 'Thai', label: 'Thai (ไทย)' },
+  { value: 'Greek', label: 'Greek (Ελληνικά)' },
+  { value: 'Hebrew', label: 'Hebrew (עברית)' },
+  { value: 'Ukrainian', label: 'Ukrainian (Українська)' },
+  { value: 'Romanian', label: 'Romanian (Română)' },
+  { value: 'Czech', label: 'Czech (Čeština)' },
+  { value: 'Danish', label: 'Danish (Dansk)' },
+  { value: 'Finnish', label: 'Finnish (Suomi)' },
+  { value: 'Norwegian', label: 'Norwegian (Norsk)' },
+  { value: 'Hungarian', label: 'Hungarian (Magyar)' },
+  { value: 'Marathi', label: 'Marathi (मराठी)' },
+  { value: 'Telugu', label: 'Telugu (తెలుగు)' },
+  { value: 'Tamil', label: 'Tamil (தமிழ்)' },
+  { value: 'Gujarati', label: 'Gujarati (ગુજરાતી)' },
+  { value: 'Urdu', label: 'Urdu (اردو)' },
+];
 
 interface SidebarProps {
   profile: CreatorProfile;
@@ -215,7 +259,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <option value="custom">-- Custom Configuration --</option>
               {userPresets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({p.user_type || 'Individual'})
+                  {p.name} ({p.user_type || 'Individual'} • {p.language || 'English'})
                 </option>
               ))}
             </select>
@@ -347,6 +391,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
               })}
             </div>
+          </div>
+
+          {/* Post Language */}
+          <div>
+            <label className="block text-slate-300 font-medium mb-1.5 flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-indigo-400" /> Post Language
+            </label>
+            <select
+              value={profile.language || 'English'}
+              onChange={(e) => handleChange('language', e.target.value)}
+              className="w-full glass-input rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none"
+            >
+              {LANGUAGE_OPTIONS.map((lang) => (
+                <option key={lang.value} value={lang.value}>
+                  {lang.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Content Type */}

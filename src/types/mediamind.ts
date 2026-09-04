@@ -5,6 +5,7 @@ export interface CreatorProfile {
   name: string;
   profession: string;
   content_type: string;
+  language?: string;
   target_audience: string;
   target_age_group: string;
   professional?: boolean;
@@ -20,6 +21,7 @@ export interface UserPreset {
   user_id?: string;
   name: string;
   user_type: string;
+  language?: string;
   professional: boolean;
   is_pro?: boolean;
   publishing_preference: Record<string, boolean>;
