@@ -100,19 +100,21 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
   const resolveFileItem = React.useCallback(
     (imgIdx: number, filename?: string): UploadedFileItem | undefined => {
       if (filename) {
-        const found =
-          activeFiles.find(
-            (f) =>
-              f.name === filename ||
-              f.originalName === filename ||
-              f.file?.name === filename
-          ) ||
-          files.find(
-            (f) =>
-              f.name === filename ||
-              f.originalName === filename ||
-              f.file?.name === filename
-          );
+        const cleanTarget = filename.replace(/\.[^/.]+$/, '').toLowerCase();
+        const matchesFile = (f: UploadedFileItem) => {
+          if (
+            f.name === filename ||
+            f.originalName === filename ||
+            f.file?.name === filename ||
+            f.compressedFile?.name === filename
+          ) {
+            return true;
+          }
+          const stemName = (f.name || f.originalName || f.file?.name || '').replace(/\.[^/.]+$/, '').toLowerCase();
+          return stemName === cleanTarget;
+        };
+
+        const found = activeFiles.find(matchesFile) || files.find(matchesFile);
         if (found) return found;
       }
       return activeFiles[imgIdx] || files[imgIdx];
@@ -282,8 +284,11 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
     }
 
     // 3. Fallback: If album was uploaded to backend, use public album image endpoint
-    if (projectId && fileItem.name) {
-      return `${REMOTE_API_URL}/api/v1/albums/${encodeURIComponent(projectId)}/images/${encodeURIComponent(fileItem.name)}`;
+    if (projectId) {
+      const serverFileName = fileItem.compressedFile?.name || fileItem.name;
+      if (serverFileName) {
+        return `${REMOTE_API_URL}/api/v1/albums/${encodeURIComponent(projectId)}/images/${encodeURIComponent(serverFileName)}`;
+      }
     }
 
     return null;

@@ -1,35 +1,66 @@
 import { UploadedFileItem } from '../types/mediamind';
+import { apiFetch } from './api';
 
 export const DEFAULT_SCORE_THRESHOLD = 7.0;
 
 /**
- * Uploads a single original uncompressed image to Cloudflare R2 via the Next.js API route.
- * The API route reads R2 bucket credentials directly from environment variables.
+ * Uploads a single original uncompressed image to Cloudflare R2.
+ * Attempts the Next.js API route first, and automatically falls back
+ * to the backend storage endpoint (/api/v1/storage/r2/upload) if running
+ * in an environment where the Next.js route is unavailable or unconfigured.
  */
 export async function uploadOriginalFileToR2(
   file: File,
   albumId = 'default',
   originalName?: string
 ): Promise<{ success: boolean; url?: string; key?: string; error?: string; skipped?: boolean }> {
-  try {
-    const formData = new FormData();
-    const finalName = originalName || file.name;
-    formData.append('file', file, finalName);
-    formData.append('albumId', albumId);
-    if (finalName) {
-      formData.append('originalName', finalName);
-    }
+  const finalName = originalName || file.name;
 
-    const res = await fetch('/api/r2/upload', {
+  const makeFormData = () => {
+    const fd = new FormData();
+    fd.append('file', file, finalName);
+    fd.append('albumId', albumId);
+    if (finalName) {
+      fd.append('originalName', finalName);
+    }
+    return fd;
+  };
+
+  // 1. Try local Next.js API route first (available in local dev and when deployed with env vars)
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/r2/upload', {
+        method: 'POST',
+        body: makeFormData(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.url) {
+          return data;
+        }
+      }
+    } catch {
+      // Fall through to backend API
+    }
+  }
+
+  // 2. Fallback to direct backend storage endpoint
+  try {
+    const backendRes = await apiFetch('/storage/r2/upload', {
       method: 'POST',
-      body: formData,
+      body: makeFormData(),
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      return { success: false, error: data.error || `Upload failed with status ${res.status}` };
+    if (backendRes.ok) {
+      const data = await backendRes.json();
+      if (data.success && data.url) {
+        return data;
+      }
+      return { success: false, error: data.error || 'R2 backend upload failed', skipped: data.skipped };
     }
-    return data;
+
+    const errText = await backendRes.text().catch(() => '');
+    return { success: false, error: `R2 upload failed (${backendRes.status}): ${errText}` };
   } catch (error: any) {
     return { success: false, error: error.message || 'Upload request failed' };
   }
