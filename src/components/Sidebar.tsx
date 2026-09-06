@@ -72,7 +72,6 @@ interface SidebarProps {
   onToggleSavePresetOnNextStep?: (save: boolean) => void;
   onManualSavePreset?: (presetName: string) => Promise<boolean>;
   isPro?: boolean;
-  onTogglePro?: (isPro: boolean) => void;
 }
 
 const AGE_GROUP_OPTIONS = ['13-17', '18-24', '25-34', '35-44', '45-54', '55+', 'All ages'];
@@ -89,7 +88,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleSavePresetOnNextStep,
   onManualSavePreset,
   isPro = false,
-  onTogglePro,
 }) => {
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
@@ -215,22 +213,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   )}
                 </div>
                 <p className="text-[10px] text-slate-400 truncate">
-                  {isPro ? 'Infinite data upload active' : 'Max 30 photos / 300MB'}
+                  {isPro ? 'Infinite data upload active' : 'Max 30 photos or 300MB'}
                 </p>
               </div>
             </div>
 
-            {onTogglePro && (
-              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-2">
-                <input
-                  type="checkbox"
-                  checked={isPro}
-                  onChange={(e) => onTogglePro(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-amber-500 peer-checked:to-purple-600"></div>
-              </label>
-            )}
+            <div className="flex-shrink-0 ml-2">
+              {isPro ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  ACTIVE
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                  FREE
+                </span>
+              )}
+            </div>
           </div>
 
           {isPro && (

@@ -20,7 +20,6 @@ import {
   Sliders,
   Maximize2,
   Crown,
-  Zap,
   Sparkles,
 } from 'lucide-react';
 import { UploadedFileItem, AnalyzeProgress } from '../types/mediamind';
@@ -39,7 +38,6 @@ interface Step1UploadProps {
   isLoading: boolean;
   analyzeProgress?: AnalyzeProgress;
   isPro?: boolean;
-  onTogglePro?: () => void;
 }
 
 const MAX_UPLOAD_IMAGES = 30;
@@ -49,7 +47,7 @@ const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 const PROGRESS_STAGES = [
   { min: 0, max: 18, text: 'Preparing photos for AI analysis...', subtitle: 'Optimizing payload and generating lightning-fast previews' },
   { min: 18, max: 38, text: 'Uploading photos to neural engine...', subtitle: 'Streaming lightweight images to clustering pipeline' },
-  { min: 38, max: 58, text: 'Preserving full-res originals in bucket storage...', subtitle: 'Safeguarding high-resolution data and full EXIF metadata in parallel' },
+  { min: 38, max: 58, text: 'Analyzing visual composition & features...', subtitle: 'Evaluating scene properties, lighting, and aesthetic motifs' },
   { min: 58, max: 76, text: 'Extracting deep visual semantics with SigLIP...', subtitle: 'Analyzing lighting, scene features, and thematic motifs' },
   { min: 76, max: 90, text: 'Grouping photos into visual stories & scenes...', subtitle: 'Computing semantic affinity graph & community clusters' },
   { min: 90, max: 98, text: 'Evaluating image quality & best shots with Florence-2...', subtitle: 'Ranking cluster representatives and generating rich descriptive tags' },
@@ -68,7 +66,6 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
   isLoading,
   analyzeProgress,
   isPro = false,
-  onTogglePro,
 }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPreparing, setIsPreparing] = useState<boolean>(false);
@@ -132,16 +129,17 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
     const selectedFiles = Array.from(e.target.files);
     setErrorMsg(null);
 
-    // Pro users have infinite data upload - no limits!
-    if (!isPro && files.length + selectedFiles.length > MAX_UPLOAD_IMAGES) {
-      setErrorMsg(`Free plan allows up to ${MAX_UPLOAD_IMAGES} images. Enable Pro Mode for infinite data uploads!`);
-      return;
-    }
-
+    const totalCount = files.length + selectedFiles.length;
     const currentTotalSize = files.reduce((acc, f) => acc + f.size, 0);
     const newTotalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
-    if (!isPro && currentTotalSize + newTotalSize > MAX_UPLOAD_SIZE_BYTES) {
-      setErrorMsg(`Free plan upload size exceeds ${MAX_UPLOAD_SIZE_MB}MB limit. Enable Pro Mode for infinite data uploads!`);
+    const totalBytes = currentTotalSize + newTotalSize;
+
+    // Free plan: limited to 300MB or 30 images, whichever is higher
+    // (Blocked ONLY if BOTH count > 30 AND total size > 300MB)
+    if (!isPro && totalCount > MAX_UPLOAD_IMAGES && totalBytes > MAX_UPLOAD_SIZE_BYTES) {
+      setErrorMsg(
+        `Free tier limit exceeded: Maximum 30 images or 300MB (whichever is higher). You selected ${totalCount} images totaling ${(totalBytes / (1024 * 1024)).toFixed(1)}MB.`
+      );
       return;
     }
 
@@ -244,7 +242,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               <p className="text-xs text-slate-400">
                 {isPro
                   ? 'Infinite data mode: Upload unlimited images with no size caps to analyze & cluster automatically.'
-                  : `Choose up to ${MAX_UPLOAD_IMAGES} images (or unlimited with Pro) to analyze and cluster automatically.`}
+                  : `Free tier: Upload up to ${MAX_UPLOAD_IMAGES} images or ${MAX_UPLOAD_SIZE_MB}MB (whichever is higher).`}
               </p>
             </div>
           </div>
@@ -343,47 +341,18 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
                     PRO Infinite Mode Active • Unlimited photos & data size • EXIF & GPS preserved
                   </span>
                 ) : (
-                  `Max ${MAX_UPLOAD_IMAGES} images (up to ${MAX_UPLOAD_SIZE_MB}MB) • EXIF, GPS & timestamps preserved`
+                  `Free tier: Up to ${MAX_UPLOAD_IMAGES} images or ${MAX_UPLOAD_SIZE_MB}MB (whichever is higher) • EXIF, GPS & timestamps preserved`
                 )}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Pro Switch suggestion banner for free users */}
-        {!isPro && onTogglePro && (
-          <div className="mt-3 p-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-transparent border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
-            <div className="flex items-center gap-2 text-amber-200">
-              <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <span>Need to upload more than 30 images? Pro users get infinite data uploads.</span>
-            </div>
-            <button
-              type="button"
-              onClick={onTogglePro}
-              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm flex-shrink-0"
-            >
-              <Zap className="w-3 h-3 text-amber-400" /> Enable Pro Mode
-            </button>
-          </div>
-        )}
-
         {errorMsg && (
           <div className="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
             <p className="text-rose-400 font-semibold flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {errorMsg}
             </p>
-            {!isPro && onTogglePro && (
-              <button
-                type="button"
-                onClick={() => {
-                  setErrorMsg(null);
-                  onTogglePro();
-                }}
-                className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-400 hover:to-purple-500 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center gap-1 flex-shrink-0"
-              >
-                <Crown className="w-3.5 h-3.5" /> Unlock Pro (Infinite Data)
-              </button>
-            )}
           </div>
         )}
       </div>

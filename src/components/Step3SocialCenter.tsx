@@ -239,6 +239,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const facebookAccount = socialAccounts.find((a) => a.platform === 'facebook');
@@ -272,7 +273,8 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
         const uploadRes = await uploadOriginalFileToR2(
           fileToUpload,
           projectId || 'direct_publish',
-          fileItem.originalName || fileItem.name
+          fileItem.originalName || fileItem.name,
+          fileItem.compressedFile
         );
         if (uploadRes.success && uploadRes.url) {
           fileItem.r2Url = uploadRes.url;

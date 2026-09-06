@@ -19,14 +19,12 @@ import logoImg from '../app/mediamuselabs_logo.png';
 
 interface FooterProps {
   isPro?: boolean;
-  onTogglePro?: () => void;
   onOpenSavedProjectsModal?: () => void;
   savedProjectsCount?: number;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   isPro = false,
-  onTogglePro,
   onOpenSavedProjectsModal,
   savedProjectsCount = 0,
 }) => {
@@ -88,38 +86,35 @@ export const Footer: React.FC<FooterProps> = ({
 
               {/* Pro Status or Upgrade Trigger in Footer */}
               <div className="pt-1">
-                {onTogglePro && (
-                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-slate-900/90 via-indigo-950/30 to-purple-950/30 border border-slate-800 flex items-center justify-between gap-3 max-w-sm">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`p-1.5 rounded-lg ${isPro ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                        <Crown className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                          <span>{isPro ? 'Pro Membership Active' : 'Free Tier (30 Photos)'}</span>
-                          {isPro && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                              ∞ Data
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-slate-400">
-                          {isPro ? 'Unlimited high-res uploads enabled' : 'Unlock infinite uploads & 1GB batch payloads'}
-                        </p>
-                      </div>
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-slate-900/90 via-indigo-950/30 to-purple-950/30 border border-slate-800 flex items-center justify-between gap-3 max-w-sm">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-1.5 rounded-lg ${isPro ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                      <Crown className="w-4 h-4" />
                     </div>
-                    <button
-                      onClick={onTogglePro}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        isPro
-                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
-                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                      }`}
-                    >
-                      {isPro ? 'Manage' : 'Upgrade'}
-                    </button>
+                    <div>
+                      <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <span>{isPro ? 'Pro Active' : 'Free Tier'}</span>
+                        {isPro ? (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            ∞ Data
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-slate-400">
+                            Max 30 photos or 300MB
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        {isPro ? 'Unlimited high-res uploads enabled' : 'Up to 2 saved projects'}
+                      </p>
+                    </div>
                   </div>
-                )}
+                  {isPro && (
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      ACTIVE
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 

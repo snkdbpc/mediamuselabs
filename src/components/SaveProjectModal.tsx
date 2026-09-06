@@ -25,7 +25,6 @@ interface SaveProjectModalProps {
   postsCount: number;
   isPro?: boolean;
   savedProjectsCount?: number;
-  onTogglePro?: () => void;
   onOpenSavedProjectsModal?: () => void;
 }
 
@@ -40,7 +39,6 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
   postsCount,
   isPro = false,
   savedProjectsCount = 0,
-  onTogglePro,
   onOpenSavedProjectsModal,
 }) => {
   const [name, setName] = useState(defaultName || 'Visual Story Album');
@@ -119,20 +117,10 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
                 <span className="font-bold text-xs">Free Plan Save Limit Reached (2 / 2 Projects)</span>
               </div>
               <p className="text-xs text-amber-200/80 leading-relaxed">
-                Free accounts can save up to 2 projects. To save this project, upgrade to Pro for unlimited project saves, or delete an existing saved project to make room.
+                Free accounts can save up to 2 projects. To save this project, delete an existing saved project to make room.
               </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {onTogglePro && (
-                  <button
-                    type="button"
-                    onClick={onTogglePro}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-sm"
-                  >
-                    <Crown className="w-3.5 h-3.5" />
-                    <span>Activate Pro (Unlimited Saves)</span>
-                  </button>
-                )}
-                {onOpenSavedProjectsModal && (
+              {onOpenSavedProjectsModal && (
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -144,8 +132,8 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
                     <Folder className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Manage Saved Projects</span>
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           ) : isPro ? (
             <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { CheckCircle2, Sparkles, Folder, Crown, Zap, LogOut } from 'lucide-react';
+import { CheckCircle2, Sparkles, Folder, Crown, LogOut } from 'lucide-react';
 import { CreatorProfile, GoogleAccountStatus } from '../types/mediamind';
 import { getGoogleLoginUrl } from '../lib/api';
 import logoImg from '../app/mediamuselabs_logo.png';
@@ -14,7 +14,6 @@ interface HeaderProps {
   savedProjectsCount?: number;
   onOpenSavedProjectsModal?: () => void;
   isPro?: boolean;
-  onTogglePro?: () => void;
   onDisconnect?: () => void;
 }
 
@@ -25,7 +24,6 @@ export const Header: React.FC<HeaderProps> = ({
   savedProjectsCount = 0,
   onOpenSavedProjectsModal,
   isPro = false,
-  onTogglePro,
   onDisconnect,
 }) => {
   const profileLabel = creatorProfile.name || creatorProfile.profession || 'your visual story';
@@ -74,36 +72,26 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right side Actions: Pro Status, Saved Projects & Google Auth */}
         <div className="flex items-center gap-3 self-end md:self-auto">
-          {/* Pro Plan Badge / Switch */}
-          {onTogglePro && (
-            <button
-              onClick={onTogglePro}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] ${
-                isPro
-                  ? 'bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-indigo-500/20 border border-amber-500/50 text-amber-300 shadow-amber-500/10'
-                  : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 hover:border-amber-500/40 text-slate-300'
-              }`}
-              title={
-                isPro
-                  ? 'Pro Mode Active: Infinite Data Uploads (Click to toggle)'
-                  : 'Click to activate Pro Mode for Infinite Data Uploads'
-              }
+          {/* Pro Plan Status Badge */}
+          {isPro ? (
+            <div
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-indigo-500/20 border border-amber-500/50 text-amber-300 shadow-md shadow-amber-500/10"
+              title="Pro Mode Active: Unlimited uploads & saved projects"
             >
-              {isPro ? (
-                <>
-                  <Crown className="w-4 h-4 text-amber-400 fill-amber-400/30" />
-                  <span className="font-bold tracking-wide">PRO ACTIVE</span>
-                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-500/30 text-amber-200 border border-amber-400/40">
-                    ∞ Data
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Get Pro</span>
-                </>
-              )}
-            </button>
+              <Crown className="w-4 h-4 text-amber-400 fill-amber-400/30" />
+              <span className="font-bold tracking-wide">PRO ACTIVE</span>
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-500/30 text-amber-200 border border-amber-400/40">
+                ∞ Data
+              </span>
+            </div>
+          ) : (
+            <div
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-slate-900/80 border border-slate-800 text-slate-400"
+              title="Free Plan: Up to 30 photos or 300MB (whichever is higher), 2 saved projects"
+            >
+              <span className="w-2 h-2 rounded-full bg-slate-500" />
+              <span>Free Plan</span>
+            </div>
           )}
 
           {/* Saved Projects Button - only shown after successful login */}

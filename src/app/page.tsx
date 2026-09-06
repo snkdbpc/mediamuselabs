@@ -28,11 +28,11 @@ import {
   scoreClusterImages,
   streamSocialPosts,
   uploadAlbum,
+  REMOTE_API_URL,
 } from '../lib/api';
-import { uploadOriginalFilesBatch } from '../lib/r2';
+import { uploadOriginalFilesBatch, deleteR2Album } from '../lib/r2';
 import {
   syncUserWithSupabase,
-  updateUserProStatus,
   fetchUserPresets,
   saveUserPreset,
   saveProjectToSupabase,
@@ -46,37 +46,19 @@ export default function Home() {
   const [googleStatus, setGoogleStatus] = useState<GoogleAccountStatus>({ connected: false });
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
 
-  // Pro user state (infinite data upload)
+  // Pro is strictly restricted to snkdbpc@gmail.com as of now
   const [isPro, setIsPro] = useState<boolean>(false);
+  const [isProjectSaved, setIsProjectSaved] = useState<boolean>(false);
 
   useEffect(() => {
+    const email = (googleStatus.email || '').toLowerCase().trim();
+    const authorized = Boolean(googleStatus.connected && email === 'snkdbpc@gmail.com');
+    setIsPro(authorized);
+    setCreatorProfile((prev) => ({ ...prev, is_pro: authorized }));
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('mediamind_is_pro') === 'true';
-      if (stored) {
-        setIsPro(true);
-        setCreatorProfile((prev) => ({ ...prev, is_pro: true }));
-      }
+      localStorage.setItem('mediamind_is_pro', String(authorized));
     }
-  }, []);
-
-  const handleTogglePro = (nextVal?: boolean) => {
-    setIsPro((prev) => {
-      const val = nextVal !== undefined ? nextVal : !prev;
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('mediamind_is_pro', String(val));
-      }
-      setCreatorProfile((cp) => ({ ...cp, is_pro: val }));
-
-      // Immediately persist to Supabase users table if user is signed in
-      if (supabaseUserId) {
-        updateUserProStatus(supabaseUserId, val).catch((err) => {
-          console.warn('Unable to sync pro status to users table:', err);
-        });
-      }
-
-      return val;
-    });
-  };
+  }, [googleStatus.connected, googleStatus.email]);
 
   // User presets state (from Supabase user_presets table)
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
@@ -372,29 +354,11 @@ export default function Home() {
       });
 
       setAnalyzeProgress({
-        progress: 42,
-        stageText: 'Preserving full-res originals in bucket storage...',
-        stageSubtitle: 'Safeguarding high-resolution data and full EXIF metadata in parallel',
+        progress: 45,
+        stageText: 'Extracting deep visual semantics with SigLIP...',
+        stageSubtitle: 'Analyzing lighting, scene features, and thematic motifs',
         status: 'running',
       });
-
-      // 3. Parallel Execution during Clustering Phase:
-      // (a) Sync uncompressed original files to bucket storage in parallel (opaque to user)
-      const storageSyncPromise = uploadOriginalFilesBatch(
-        activeItems,
-        newAlbumId,
-        (fileId, r2Url) => {
-          setUploadedFiles((prev) =>
-            prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
-          );
-        }
-      ).catch((err) => {
-        console.warn('Storage sync notice:', err);
-        return {};
-      });
-
-      // (b) Run clustering analysis on the backend
-      const clusterPromise = createClusters(newAlbumId, filenames, indexMap, albumDescription);
 
       // Dynamic progress advancement during deep feature extraction & clustering
       progressTimer = setInterval(() => {
@@ -417,8 +381,8 @@ export default function Home() {
         });
       }, 250);
 
-      // Wait for both clustering and original photo sync to complete
-      const [, clusterRes] = await Promise.all([storageSyncPromise, clusterPromise]);
+      // Run clustering analysis on the backend using lightweight compressed images
+      const clusterRes = await createClusters(newAlbumId, filenames, indexMap, albumDescription);
       if (progressTimer) clearInterval(progressTimer);
 
       setAnalyzeProgress({
@@ -545,24 +509,42 @@ export default function Home() {
     }
 
     if (!isPro && savedProjects.length >= 2) {
-      alert('Free tier limit reached: You can save up to 2 projects. Upgrade to Pro for unlimited project saves or delete an existing project.');
+      alert('Free tier limit reached: You can save up to 2 projects. To save this project, delete an existing project to make room.');
       return false;
     }
 
     const activeItems = uploadedFiles.filter((f) => f.included);
+    const targetItems = activeItems.length > 0 ? activeItems : uploadedFiles;
+
+    // On-demand upload to R2 for persistent cloud storage when user explicitly saves project
+    try {
+      await uploadOriginalFilesBatch(
+        targetItems,
+        albumId || 'saved_project',
+        (fileId, r2Url) => {
+          setUploadedFiles((prev) =>
+            prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+          );
+        }
+      );
+    } catch (r2Err) {
+      console.warn('R2 storage sync notice during project save:', r2Err);
+    }
+
     const res = await saveProjectToSupabase({
       userId: supabaseUserId,
       name,
       description,
       status: 'finalized',
       creatorProfile: { ...creatorProfile, is_pro: isPro },
-      files: activeItems.length > 0 ? activeItems : uploadedFiles,
+      files: targetItems,
       clusters,
       posts: generatedPosts,
       scoredMetadata,
     });
 
     if (res.success) {
+      setIsProjectSaved(true);
       // Refresh saved projects list
       fetchUserProjects(supabaseUserId).then(setSavedProjects);
       return true;
@@ -606,6 +588,7 @@ export default function Home() {
 
       // 2. Restore Project State
       setAlbumId(data.project.id);
+      setIsProjectSaved(true);
       setAlbumDescription(data.albumDescription || data.project.description || '');
       setUploadedFiles(data.media);
       setClusters(data.clusters);
@@ -633,6 +616,10 @@ export default function Home() {
   };
 
   const handleResetApp = () => {
+    if (!isProjectSaved && albumId) {
+      deleteR2Album(albumId).catch((err) => console.warn('R2 cleanup error on reset:', err));
+    }
+    setIsProjectSaved(false);
     setUploadedFiles([]);
     setAlbumDescription('');
     setAlbumId(null);
@@ -641,6 +628,24 @@ export default function Home() {
     setScoredMetadata({});
     setCurrentStep('upload');
   };
+
+  // Clean up temporary R2 objects if user leaves without saving the project
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!isProjectSaved && albumId) {
+        try {
+          fetch(`${REMOTE_API_URL}/api/v1/storage/r2/album/${encodeURIComponent(albumId)}`, {
+            method: 'DELETE',
+            keepalive: true,
+          }).catch(() => {});
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [albumId, isProjectSaved]);
 
   const handleDisconnectGoogle = () => {
     if (typeof window !== 'undefined') {
@@ -677,7 +682,6 @@ export default function Home() {
           savedProjectsCount={savedProjects.length}
           onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
           isPro={isPro}
-          onTogglePro={() => handleTogglePro()}
           onDisconnect={handleDisconnectGoogle}
         />
 
@@ -695,7 +699,6 @@ export default function Home() {
             onToggleSavePresetOnNextStep={setSavePresetOnNextStep}
             onManualSavePreset={handleManualSavePreset}
             isPro={isPro}
-            onTogglePro={handleTogglePro}
           />
 
           {/* Workflow Center */}
@@ -719,7 +722,6 @@ export default function Home() {
                 isLoading={isAnalyzing}
                 analyzeProgress={analyzeProgress}
                 isPro={isPro}
-                onTogglePro={() => handleTogglePro()}
               />
             )}
 
@@ -750,7 +752,6 @@ export default function Home() {
       {/* Footer Section */}
       <Footer
         isPro={isPro}
-        onTogglePro={() => handleTogglePro()}
         savedProjectsCount={savedProjects.length}
         onOpenSavedProjectsModal={
           googleStatus.connected ? () => setIsSavedProjectsModalOpen(true) : undefined
@@ -783,7 +784,6 @@ export default function Home() {
         postsCount={totalGeneratedPostsCount}
         isPro={isPro}
         savedProjectsCount={savedProjects.length}
-        onTogglePro={() => handleTogglePro()}
         onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
       />
     </div>
