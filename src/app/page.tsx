@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { Header } from '../components/Header';
 import { Sidebar } from '../components/Sidebar';
@@ -51,6 +51,10 @@ export default function Home() {
   const [isProjectSaved, setIsProjectSaved] = useState<boolean>(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentProjectName, setCurrentProjectName] = useState<string>('');
+
+  // Background parallel R2 upload tracking while clustering
+  const r2UploadPromiseRef = useRef<Promise<Record<string, string>> | null>(null);
+  const r2UrlsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const email = (googleStatus.email || '').toLowerCase().trim();
@@ -347,9 +351,30 @@ export default function Home() {
         status: 'running',
       });
 
+      // Clean up previous unsaved temporary R2 album if user re-clusters
+      if (!isProjectSaved && albumId && albumId !== 'saved_project') {
+        deleteR2Album(albumId).catch(() => {});
+      }
+
       const uploadRes = await uploadAlbum(lightweightFiles, connectionId, isPro, supabaseUserId);
       const newAlbumId = uploadRes.album_id;
       setAlbumId(newAlbumId);
+      setIsProjectSaved(false);
+
+      // Start parallel R2 upload of original uncompressed photos concurrently while clustering runs
+      r2UploadPromiseRef.current = uploadOriginalFilesBatch(
+        activeItems,
+        newAlbumId,
+        (fileId, r2Url) => {
+          r2UrlsRef.current[fileId] = r2Url;
+          setUploadedFiles((prev) =>
+            prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+          );
+        }
+      ).catch((r2Err) => {
+        console.warn('Parallel background R2 upload notice:', r2Err);
+        return {};
+      });
 
       // 2. Build index map matching uploaded files
       const filenames = lightweightFiles.map((f) => f.name);
@@ -526,20 +551,40 @@ export default function Home() {
     const activeItems = uploadedFiles.filter((f) => f.included);
     const targetItems = activeItems.length > 0 ? activeItems : uploadedFiles;
 
-    // On-demand upload to R2 for persistent cloud storage when user explicitly saves project
-    try {
-      await uploadOriginalFilesBatch(
-        targetItems,
-        currentProjectId || albumId || 'saved_project',
-        (fileId, r2Url) => {
-          setUploadedFiles((prev) =>
-            prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
-          );
-        }
-      );
-    } catch (r2Err) {
-      console.warn('R2 storage sync notice during project save:', r2Err);
+    // 1. Await background parallel R2 upload if still in-flight
+    if (r2UploadPromiseRef.current) {
+      try {
+        await r2UploadPromiseRef.current;
+      } catch (r2WaitErr) {
+        console.warn('In-flight R2 parallel upload wait notice:', r2WaitErr);
+      }
     }
+
+    // 2. Only upload any items that still lack an R2 URL (typically 0 since uploaded in parallel during clustering)
+    const pendingItems = targetItems.filter((f) => !f.r2Url && !r2UrlsRef.current[f.id]);
+    if (pendingItems.length > 0) {
+      try {
+        const batchRes = await uploadOriginalFilesBatch(
+          pendingItems,
+          currentProjectId || albumId || 'saved_project',
+          (fileId, r2Url) => {
+            r2UrlsRef.current[fileId] = r2Url;
+            setUploadedFiles((prev) =>
+              prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+            );
+          }
+        );
+        Object.assign(r2UrlsRef.current, batchRes);
+      } catch (r2Err) {
+        console.warn('R2 storage sync notice during project save:', r2Err);
+      }
+    }
+
+    // 3. Ensure files sent to Supabase have resolved r2Url
+    const itemsWithR2 = targetItems.map((f) => ({
+      ...f,
+      r2Url: f.r2Url || r2UrlsRef.current[f.id] || '',
+    }));
 
     const res = await saveProjectToSupabase({
       projectId: currentProjectId || undefined,
@@ -548,7 +593,7 @@ export default function Home() {
       description,
       status: 'finalized',
       creatorProfile: { ...creatorProfile, is_pro: isPro },
-      files: targetItems,
+      files: itemsWithR2,
       clusters,
       posts: generatedPosts,
       scoredMetadata,
@@ -602,6 +647,8 @@ export default function Home() {
       }
 
       // 2. Restore Project State
+      r2UploadPromiseRef.current = null;
+      r2UrlsRef.current = {};
       setCurrentProjectId(data.project.id);
       setCurrentProjectName(data.project.name || '');
       setAlbumId(data.project.id);
@@ -636,6 +683,8 @@ export default function Home() {
     if (!isProjectSaved && albumId) {
       deleteR2Album(albumId).catch((err) => console.warn('R2 cleanup error on reset:', err));
     }
+    r2UploadPromiseRef.current = null;
+    r2UrlsRef.current = {};
     setIsProjectSaved(false);
     setCurrentProjectId(null);
     setCurrentProjectName('');
@@ -663,10 +712,15 @@ export default function Home() {
     const handleBeforeUnload = () => {
       if (!isProjectSaved && albumId) {
         try {
-          fetch(`${REMOTE_API_URL}/api/v1/storage/r2/album/${encodeURIComponent(albumId)}`, {
-            method: 'DELETE',
-            keepalive: true,
-          }).catch(() => {});
+          const cleanupUrl = `${REMOTE_API_URL}/api/v1/storage/r2/album/${encodeURIComponent(albumId)}/cleanup`;
+          if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+            navigator.sendBeacon(cleanupUrl);
+          } else {
+            fetch(cleanupUrl, {
+              method: 'POST',
+              keepalive: true,
+            }).catch(() => {});
+          }
         } catch {
           // ignore
         }
