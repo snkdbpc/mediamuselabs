@@ -33,6 +33,7 @@ import {
   Save,
   Send,
   AlertCircle,
+  PlusCircle,
 } from 'lucide-react';
 import { toAbsoluteScore, DEFAULT_SCORE_THRESHOLD, uploadOriginalFileToR2 } from '../lib/r2';
 import {
@@ -62,6 +63,8 @@ interface Step3SocialCenterProps {
   onSetStep: (step: 'upload' | 'choose' | 'edit' | 'finalize') => void;
   onResetApp: () => void;
   onOpenSaveProject?: () => void;
+  onCreateNewProject?: () => void;
+  isExistingProject?: boolean;
 }
 
 export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
@@ -81,6 +84,8 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
   onSetStep,
   onResetApp,
   onOpenSaveProject,
+  onCreateNewProject,
+  isExistingProject = false,
 }) => {
   const [selectedBestN, setSelectedBestN] = useState<Record<string, number>>({});
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -319,34 +324,42 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       [stateKey]: { status: 'publishing' },
     }));
 
-    const imageUrl = await resolvePublicImageUrl(selectedFile);
-    if (!imageUrl) {
-      setPublishingState((prev) => ({
-        ...prev,
-        [stateKey]: { status: 'failed', error: 'Unable to obtain a public image URL for Facebook publishing.' },
-      }));
-      alert('Could not prepare an image for publishing. Please ensure an image is selected.');
-      return;
-    }
+    try {
+      const imageUrl = await resolvePublicImageUrl(selectedFile);
+      if (!imageUrl) {
+        setPublishingState((prev) => ({
+          ...prev,
+          [stateKey]: { status: 'failed', error: 'Unable to obtain a public image URL for Facebook publishing.' },
+        }));
+        alert('Could not prepare an image for publishing. Please ensure an image is selected.');
+        return;
+      }
 
-    const result = await publishToFacebook({
-      userId,
-      projectId: projectId || undefined,
-      message: postText,
-      imageUrl,
-      pageId: facebookAccount.page_id,
-    });
+      const result = await publishToFacebook({
+        userId,
+        projectId: projectId || undefined,
+        message: postText,
+        imageUrl,
+        pageId: facebookAccount.page_id,
+      });
 
-    if (result.success && result.post_url) {
+      if (result.success && result.post_url) {
+        setPublishingState((prev) => ({
+          ...prev,
+          [stateKey]: { status: 'success', url: result.post_url },
+        }));
+        showShareFeedback(clusterId, 'Successfully published to Facebook Page!');
+      } else {
+        setPublishingState((prev) => ({
+          ...prev,
+          [stateKey]: { status: 'failed', error: result.error || 'Facebook publishing failed' },
+        }));
+      }
+    } catch (err: any) {
+      console.error('Facebook publishing unhandled error:', err);
       setPublishingState((prev) => ({
         ...prev,
-        [stateKey]: { status: 'success', url: result.post_url },
-      }));
-      showShareFeedback(clusterId, 'Successfully published to Facebook Page!');
-    } else {
-      setPublishingState((prev) => ({
-        ...prev,
-        [stateKey]: { status: 'failed', error: result.error || 'Facebook publishing failed' },
+        [stateKey]: { status: 'failed', error: err.message || 'Unexpected error publishing to Facebook' },
       }));
     }
   };
@@ -381,34 +394,42 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
       [stateKey]: { status: 'publishing' },
     }));
 
-    const imageUrl = await resolvePublicImageUrl(selectedFile);
-    if (!imageUrl) {
-      setPublishingState((prev) => ({
-        ...prev,
-        [stateKey]: { status: 'failed', error: 'Unable to obtain a public image URL for Instagram publishing.' },
-      }));
-      alert('Could not prepare an image for publishing. Please ensure an image is selected.');
-      return;
-    }
+    try {
+      const imageUrl = await resolvePublicImageUrl(selectedFile);
+      if (!imageUrl) {
+        setPublishingState((prev) => ({
+          ...prev,
+          [stateKey]: { status: 'failed', error: 'Unable to obtain a public image URL for Instagram publishing.' },
+        }));
+        alert('Could not prepare an image for publishing. Please ensure an image is selected.');
+        return;
+      }
 
-    const result = await publishToInstagram({
-      userId,
-      projectId: projectId || undefined,
-      caption: fullCaption,
-      imageUrl,
-      igUserId: instagramAccount.platform_user_id,
-    });
+      const result = await publishToInstagram({
+        userId,
+        projectId: projectId || undefined,
+        caption: fullCaption,
+        imageUrl,
+        igUserId: instagramAccount.platform_user_id,
+      });
 
-    if (result.success && result.post_url) {
+      if (result.success && result.post_url) {
+        setPublishingState((prev) => ({
+          ...prev,
+          [stateKey]: { status: 'success', url: result.post_url },
+        }));
+        showShareFeedback(clusterId, 'Successfully published to Instagram!');
+      } else {
+        setPublishingState((prev) => ({
+          ...prev,
+          [stateKey]: { status: 'failed', error: result.error || 'Instagram publishing failed' },
+        }));
+      }
+    } catch (err: any) {
+      console.error('Instagram publishing unhandled error:', err);
       setPublishingState((prev) => ({
         ...prev,
-        [stateKey]: { status: 'success', url: result.post_url },
-      }));
-      showShareFeedback(clusterId, 'Successfully published to Instagram!');
-    } else {
-      setPublishingState((prev) => ({
-        ...prev,
-        [stateKey]: { status: 'failed', error: result.error || 'Instagram publishing failed' },
+        [stateKey]: { status: 'failed', error: err.message || 'Unexpected error publishing to Instagram' },
       }));
     }
   };
@@ -588,7 +609,17 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
               onClick={onOpenSaveProject}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold border border-emerald-500/50 shadow-md shadow-emerald-950/40 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
             >
-              <Save className="w-4 h-4" /> Save Project
+              <Save className="w-4 h-4" /> {isExistingProject ? 'Update Project' : 'Save Project'}
+            </button>
+          )}
+
+          {onCreateNewProject && (
+            <button
+              onClick={onCreateNewProject}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-md transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+              title="Start a fresh new project"
+            >
+              <PlusCircle className="w-4 h-4 text-indigo-400" /> New Project
             </button>
           )}
         </div>
@@ -1493,9 +1524,23 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                 )}
 
                 {activeTabKey === 'fb' && publishingState[`${cId}_fb`]?.status === 'failed' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300">
-                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                    <span>Facebook Publishing Failed: {publishingState[`${cId}_fb`]?.error}</span>
+                  <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <span>Facebook Publishing Failed: {publishingState[`${cId}_fb`]?.error}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPublishingState((prev) => ({
+                          ...prev,
+                          [`${cId}_fb`]: { status: 'idle' },
+                        }))
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 text-xs font-semibold border border-rose-700/50 transition-colors flex-shrink-0"
+                    >
+                      Dismiss
+                    </button>
                   </div>
                 )}
 
@@ -1519,9 +1564,23 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
                 )}
 
                 {activeTabKey === 'ig' && publishingState[`${cId}_ig`]?.status === 'failed' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300">
-                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                    <span>Instagram Publishing Failed: {publishingState[`${cId}_ig`]?.error}</span>
+                  <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <span>Instagram Publishing Failed: {publishingState[`${cId}_ig`]?.error}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPublishingState((prev) => ({
+                          ...prev,
+                          [`${cId}_ig`]: { status: 'idle' },
+                        }))
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 text-xs font-semibold border border-rose-700/50 transition-colors flex-shrink-0"
+                    >
+                      Dismiss
+                    </button>
                   </div>
                 )}
               </div>

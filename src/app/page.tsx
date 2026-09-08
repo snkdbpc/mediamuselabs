@@ -49,6 +49,8 @@ export default function Home() {
   // Pro is strictly restricted to snkdbpc@gmail.com as of now
   const [isPro, setIsPro] = useState<boolean>(false);
   const [isProjectSaved, setIsProjectSaved] = useState<boolean>(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [currentProjectName, setCurrentProjectName] = useState<string>('');
 
   useEffect(() => {
     const email = (googleStatus.email || '').toLowerCase().trim();
@@ -505,15 +507,20 @@ export default function Home() {
   };
 
   // Save Project to Supabase
-  const handleSaveProject = async (name: string, description?: string): Promise<boolean> => {
+  const handleSaveProject = async (
+    name: string,
+    description?: string
+  ): Promise<{ success: boolean; error?: string }> => {
     if (!supabaseUserId) {
-      alert('Please connect your Google account first to save projects.');
-      return false;
+      return { success: false, error: 'Please connect your Google account first to save projects.' };
     }
 
-    if (!isPro && savedProjects.length >= 2) {
-      alert('Free tier limit reached: You can save up to 2 projects. To save this project, delete an existing project to make room.');
-      return false;
+    const isRewriting = Boolean(currentProjectId);
+    if (!isPro && !isRewriting && savedProjects.length >= 2) {
+      return {
+        success: false,
+        error: 'Free tier limit reached: You can save up to 2 projects. To save a new project, delete an existing project to make room.',
+      };
     }
 
     const activeItems = uploadedFiles.filter((f) => f.included);
@@ -523,7 +530,7 @@ export default function Home() {
     try {
       await uploadOriginalFilesBatch(
         targetItems,
-        albumId || 'saved_project',
+        currentProjectId || albumId || 'saved_project',
         (fileId, r2Url) => {
           setUploadedFiles((prev) =>
             prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
@@ -535,6 +542,7 @@ export default function Home() {
     }
 
     const res = await saveProjectToSupabase({
+      projectId: currentProjectId || undefined,
       userId: supabaseUserId,
       name,
       description,
@@ -547,13 +555,17 @@ export default function Home() {
     });
 
     if (res.success) {
+      if (res.projectId) {
+        setCurrentProjectId(res.projectId);
+        setAlbumId(res.projectId);
+      }
+      setCurrentProjectName(name);
       setIsProjectSaved(true);
       // Refresh saved projects list
       fetchUserProjects(supabaseUserId).then(setSavedProjects);
-      return true;
+      return { success: true };
     } else {
-      alert(`Failed to save project: ${res.error}`);
-      return false;
+      return { success: false, error: res.error || 'Failed to save project' };
     }
   };
 
@@ -590,6 +602,8 @@ export default function Home() {
       }
 
       // 2. Restore Project State
+      setCurrentProjectId(data.project.id);
+      setCurrentProjectName(data.project.name || '');
       setAlbumId(data.project.id);
       setIsProjectSaved(true);
       setAlbumDescription(data.albumDescription || data.project.description || '');
@@ -623,6 +637,8 @@ export default function Home() {
       deleteR2Album(albumId).catch((err) => console.warn('R2 cleanup error on reset:', err));
     }
     setIsProjectSaved(false);
+    setCurrentProjectId(null);
+    setCurrentProjectName('');
     setUploadedFiles([]);
     setAlbumDescription('');
     setAlbumId(null);
@@ -630,6 +646,16 @@ export default function Home() {
     setGeneratedPosts({});
     setScoredMetadata({});
     setCurrentStep('upload');
+  };
+
+  const handleCreateNewProject = () => {
+    if (uploadedFiles.length > 0) {
+      const confirmNew = window.confirm(
+        'Start a new project? Any unsaved progress in the current project will be cleared.'
+      );
+      if (!confirmNew) return;
+    }
+    handleResetApp();
   };
 
   // Clean up temporary R2 objects if user leaves without saving the project
@@ -737,7 +763,8 @@ export default function Home() {
                 creatorProfile={creatorProfile}
                 connectionId={connectionId}
                 userId={supabaseUserId}
-                projectId={albumId}
+                projectId={currentProjectId || albumId}
+                isExistingProject={Boolean(currentProjectId)}
                 isStreaming={isGenerating}
                 streamProgress={streamProgress}
                 onPostUpdate={handlePostUpdate}
@@ -745,6 +772,7 @@ export default function Home() {
                 onClustersChange={setClusters}
                 onSetStep={(step) => setCurrentStep(step)}
                 onResetApp={handleResetApp}
+                onCreateNewProject={handleCreateNewProject}
                 onOpenSaveProject={() => setIsSaveProjectModalOpen(true)}
               />
             )}
@@ -776,10 +804,13 @@ export default function Home() {
         isOpen={isSaveProjectModalOpen}
         onClose={() => setIsSaveProjectModalOpen(false)}
         onSave={handleSaveProject}
+        isExistingProject={Boolean(currentProjectId)}
+        existingProjectName={currentProjectName}
         defaultName={
-          creatorProfile.name
+          currentProjectName ||
+          (creatorProfile.name
             ? `${creatorProfile.name} Project`
-            : `Visual Album ${new Date().toLocaleDateString()}`
+            : `Visual Album ${new Date().toLocaleDateString()}`)
         }
         defaultDescription={albumDescription}
         totalMediaCount={uploadedFiles.length}

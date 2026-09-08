@@ -182,6 +182,7 @@ export async function saveUserPreset(
 }
 
 export interface SaveProjectPayload {
+  projectId?: string;
   userId: string;
   name: string;
   description?: string;
@@ -208,6 +209,7 @@ export async function saveProjectToSupabase(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        project_id: payload.projectId,
         user_id: payload.userId,
         name: payload.name || 'Untitled Visual Project',
         description: payload.description || '',
@@ -231,9 +233,16 @@ export async function saveProjectToSupabase(
       }),
     });
 
-    const data = await res.json();
+    let data: any = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
+
     if (!res.ok || !data.success) {
-      return { success: false, error: data.detail || data.error || 'Failed to save project' };
+      const errMsg = data.detail || data.error || data.message || `Failed to save project (HTTP ${res.status})`;
+      return { success: false, error: errMsg };
     }
 
     return { success: true, projectId: data.project_id };

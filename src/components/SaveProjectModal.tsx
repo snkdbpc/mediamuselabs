@@ -17,7 +17,7 @@ import {
 interface SaveProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string, description?: string) => Promise<boolean>;
+  onSave: (name: string, description?: string) => Promise<boolean | { success: boolean; error?: string }>;
   defaultName: string;
   defaultDescription: string;
   totalMediaCount: number;
@@ -25,6 +25,8 @@ interface SaveProjectModalProps {
   postsCount: number;
   isPro?: boolean;
   savedProjectsCount?: number;
+  isExistingProject?: boolean;
+  existingProjectName?: string;
   onOpenSavedProjectsModal?: () => void;
 }
 
@@ -39,15 +41,27 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
   postsCount,
   isPro = false,
   savedProjectsCount = 0,
+  isExistingProject = false,
+  existingProjectName = '',
   onOpenSavedProjectsModal,
 }) => {
-  const [name, setName] = useState(defaultName || 'Visual Story Album');
+  const [name, setName] = useState(existingProjectName || defaultName || 'Visual Story Album');
   const [description, setDescription] = useState(defaultDescription || '');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const isLimitReached = !isPro && savedProjectsCount >= 2;
+  React.useEffect(() => {
+    if (isOpen) {
+      setName(existingProjectName || defaultName || 'Visual Story Album');
+      setDescription(defaultDescription || '');
+      setErrorMsg(null);
+      setIsSuccess(false);
+      setIsSaving(false);
+    }
+  }, [isOpen, existingProjectName, defaultName, defaultDescription]);
+
+  const isLimitReached = !isPro && !isExistingProject && savedProjectsCount >= 2;
 
   if (!isOpen) return null;
 
@@ -66,7 +80,10 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
     setErrorMsg(null);
     setIsSaving(true);
     try {
-      const ok = await onSave(name.trim(), description.trim());
+      const res = await onSave(name.trim(), description.trim());
+      const ok = typeof res === 'boolean' ? res : res?.success;
+      const detailError = typeof res === 'object' && res?.error ? res.error : 'Failed to save project. Please try again.';
+
       if (ok) {
         setIsSuccess(true);
         setTimeout(() => {
@@ -74,7 +91,7 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
           onClose();
         }, 1200);
       } else {
-        setErrorMsg('Failed to save project. Please try again.');
+        setErrorMsg(detailError);
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Error saving project');
@@ -93,8 +110,14 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
               <Save className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-100">Save Project</h2>
-              <p className="text-xs text-slate-400">Store clusters, media metadata, and generated social posts</p>
+              <h2 className="text-base font-bold text-slate-100">
+                {isExistingProject ? 'Update / Rewrite Project' : 'Save Project'}
+              </h2>
+              <p className="text-xs text-slate-400">
+                {isExistingProject
+                  ? 'Rewrites this saved project with your updated clusters, photos, and copy'
+                  : 'Store clusters, media metadata, and generated social posts'}
+              </p>
             </div>
           </div>
 
@@ -134,6 +157,14 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
                   </button>
                 </div>
               )}
+            </div>
+          ) : isExistingProject ? (
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs">
+              <div className="flex items-center gap-1.5 font-bold">
+                <Layers className="w-4 h-4 text-indigo-400" />
+                <span>Rewriting Existing Project</span>
+              </div>
+              <span className="text-[11px] font-medium text-indigo-200/90">Overwrites without consuming extra slots</span>
             </div>
           ) : isPro ? (
             <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
@@ -234,17 +265,17 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Saving project...</span>
+                  <span>{isExistingProject ? 'Updating project...' : 'Saving project...'}</span>
                 </>
               ) : isSuccess ? (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Saved!</span>
+                  <span>{isExistingProject ? 'Updated!' : 'Saved!'}</span>
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Save Project</span>
+                  <span>{isExistingProject ? 'Update & Rewrite Project' : 'Save Project'}</span>
                 </>
               )}
             </button>
