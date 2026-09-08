@@ -273,8 +273,7 @@ export const Step3SocialCenter: React.FC<Step3SocialCenterProps> = ({
         const uploadRes = await uploadOriginalFileToR2(
           fileToUpload,
           projectId || 'direct_publish',
-          fileItem.originalName || fileItem.name,
-          fileItem.compressedFile
+          fileItem.originalName || fileItem.name
         );
         if (uploadRes.success && uploadRes.url) {
           fileItem.r2Url = uploadRes.url;

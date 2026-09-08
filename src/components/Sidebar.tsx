@@ -257,7 +257,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <option value="custom">-- Custom Configuration --</option>
               {userPresets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({p.user_type || 'Individual'} • {p.language || 'English'})
+                  {p.name} ({p.user_type || 'Individual'}{p.profession ? ` • ${p.profession}` : ''} • {p.language || 'English'})
                 </option>
               ))}
             </select>

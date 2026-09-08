@@ -21,6 +21,7 @@ export interface UserPreset {
   user_id?: string;
   name: string;
   user_type: string;
+  profession?: string;
   language?: string;
   professional: boolean;
   is_pro?: boolean;

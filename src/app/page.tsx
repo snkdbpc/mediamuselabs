@@ -247,6 +247,7 @@ export default function Home() {
       preset_name: preset.name,
       name: preset.name || prev.name,
       user_type: preset.user_type || prev.user_type,
+      profession: preset.profession !== undefined ? preset.profession : prev.profession,
       language: preset.language || prev.language || 'English',
       professional: preset.professional,
       publishing_preference: preset.publishing_preference || prev.publishing_preference,
@@ -267,6 +268,7 @@ export default function Home() {
       user_id: supabaseUserId,
       name: presetName,
       user_type: creatorProfile.user_type || 'Individual',
+      profession: creatorProfile.profession || '',
       language: creatorProfile.language || 'English',
       professional: Boolean(creatorProfile.professional),
       publishing_preference: creatorProfile.publishing_preference || {
@@ -301,6 +303,7 @@ export default function Home() {
         user_id: supabaseUserId,
         name: creatorProfile.preset_name || creatorProfile.name || 'My Preset',
         user_type: creatorProfile.user_type || 'Individual',
+        profession: creatorProfile.profession || '',
         language: creatorProfile.language || 'English',
         professional: Boolean(creatorProfile.professional),
         publishing_preference: creatorProfile.publishing_preference || {
@@ -569,7 +572,7 @@ export default function Home() {
         setCreatorProfile({
           user_type: data.preset.user_type,
           name: data.preset.name,
-          profession: '',
+          profession: data.preset.profession || (data.preset.publishing_preference as any)?._profession || '',
           content_type: 'Social post',
           language: data.preset.language || 'English',
           target_audience: data.preset.target_audience,

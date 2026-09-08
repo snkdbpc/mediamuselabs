@@ -10,16 +10,15 @@ export const DEFAULT_SCORE_THRESHOLD = 7.0;
  * in an environment where the Next.js route is unavailable or unconfigured.
  */
 /**
- * Uploads an image to Cloudflare R2 directly from the browser using a Pre-Signed PUT URL.
- * The 50MB original file streams DIRECTLY to Cloudflare R2 and NEVER touches the backend server.
- * If direct upload fails (e.g. CORS not configured on R2 bucket), it falls back to uploading
- * the lightweight compressed version to the backend, ensuring a 50MB file is NEVER sent to the backend.
+ * Uploads an original uncompressed image to Cloudflare R2.
+ * Attempts direct streaming from the browser using a Pre-Signed PUT URL.
+ * If direct upload is blocked by bucket CORS policy, automatically falls back
+ * to streaming the original uncompressed image through the backend storage endpoint.
  */
 export async function uploadOriginalFileToR2(
   file: File,
   albumId = 'default',
-  originalName?: string,
-  fallbackCompressedFile?: File
+  originalName?: string
 ): Promise<{ success: boolean; url?: string; key?: string; error?: string; skipped?: boolean; size?: number; originalName?: string }> {
   const finalName = originalName || file.name;
   const contentType = file.type || 'image/jpeg';
@@ -72,19 +71,11 @@ export async function uploadOriginalFileToR2(
     console.warn('Presign request notice:', err);
   }
 
-  // 3. Fallback protection: If direct R2 upload could not complete (e.g. CORS not configured),
-  // NEVER send the 50MB original to the backend! Send only the compressed lightweight file (~150KB) if available.
-  const fileToFallback = fallbackCompressedFile || (file.size > 2 * 1024 * 1024 ? null : file);
-  if (!fileToFallback) {
-    return {
-      success: false,
-      error: 'Direct R2 upload failed (check CORS on R2 bucket). Original file exceeds 2MB and was not sent to backend.',
-    };
-  }
-
+  // 3. Backend upload fallback: If direct browser-to-R2 upload could not complete (e.g. CORS not configured on R2 bucket),
+  // stream the original uncompressed image file via the backend /storage/r2/upload endpoint.
   try {
     const formData = new FormData();
-    formData.append('file', fileToFallback, finalName);
+    formData.append('file', file, finalName);
     formData.append('albumId', albumId);
     formData.append('originalName', finalName);
 
@@ -143,8 +134,12 @@ export async function uploadOriginalFilesBatch(
       if (!item) break;
 
       const fileToUpload = item.originalFile || item.file;
-      const fileName = item.originalName || fileToUpload.name;
-      const res = await uploadOriginalFileToR2(fileToUpload, albumId, fileName, item.compressedFile);
+      const fileName = item.originalName || fileToUpload?.name || item.name;
+      if (!fileToUpload) {
+        completed++;
+        continue;
+      }
+      const res = await uploadOriginalFileToR2(fileToUpload, albumId, fileName);
 
       if (res.success && res.url) {
         results[item.id] = res.url;
