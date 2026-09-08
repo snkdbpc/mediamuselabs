@@ -676,6 +676,9 @@ export default function Home() {
     const ok = await deleteProjectFromSupabase(projectId);
     if (ok && supabaseUserId) {
       setSavedProjects((prev) => prev.filter((p) => p.id !== projectId));
+      if (currentProjectId === projectId) {
+        handleResetApp();
+      }
     }
   };
 
