@@ -80,7 +80,13 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
     setErrorMsg(null);
     setIsSaving(true);
     try {
-      const res = await onSave(name.trim(), description.trim());
+      const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) =>
+        setTimeout(() => reject(new Error('Save request timed out. Please check your network and try again.')), 25000)
+      );
+      const res = await Promise.race([
+        onSave(name.trim(), description.trim()),
+        timeoutPromise,
+      ]);
       const ok = typeof res === 'boolean' ? res : res?.success;
       const detailError = typeof res === 'object' && res?.error ? res.error : 'Failed to save project. Please try again.';
 

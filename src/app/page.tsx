@@ -551,40 +551,49 @@ export default function Home() {
     const activeItems = uploadedFiles.filter((f) => f.included);
     const targetItems = activeItems.length > 0 ? activeItems : uploadedFiles;
 
-    // 1. Await background parallel R2 upload if still in-flight
+    // 1. Brief grace wait (max 2.5s) if background parallel R2 upload is still finishing, so we don't delay saving
     if (r2UploadPromiseRef.current) {
       try {
-        await r2UploadPromiseRef.current;
+        await Promise.race([
+          r2UploadPromiseRef.current,
+          new Promise((resolve) => setTimeout(resolve, 2500)),
+        ]);
       } catch (r2WaitErr) {
         console.warn('In-flight R2 parallel upload wait notice:', r2WaitErr);
       }
     }
 
-    // 2. Only upload any items that still lack an R2 URL (typically 0 since uploaded in parallel during clustering)
+    // 2. Prepare items for Supabase save:
+    // Files that have completed R2 upload use their permanent r2Url.
+    // Files still pending upload use the backend album image endpoint or previewUrl as fallback.
+    const itemsWithR2 = targetItems.map((f) => {
+      const resolvedR2 = f.r2Url || r2UrlsRef.current[f.id];
+      const fallbackUrl = albumId
+        ? `/api/v1/albums/${encodeURIComponent(albumId)}/images/${encodeURIComponent(f.originalName || f.name)}`
+        : f.previewUrl || '';
+      return {
+        ...f,
+        r2Url: resolvedR2 || fallbackUrl,
+        previewUrl: f.previewUrl || fallbackUrl,
+      };
+    });
+
+    // 3. Continue any remaining pending R2 uploads in the background without blocking the project save
     const pendingItems = targetItems.filter((f) => !f.r2Url && !r2UrlsRef.current[f.id]);
     if (pendingItems.length > 0) {
-      try {
-        const batchRes = await uploadOriginalFilesBatch(
-          pendingItems,
-          currentProjectId || albumId || 'saved_project',
-          (fileId, r2Url) => {
-            r2UrlsRef.current[fileId] = r2Url;
-            setUploadedFiles((prev) =>
-              prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
-            );
-          }
-        );
-        Object.assign(r2UrlsRef.current, batchRes);
-      } catch (r2Err) {
-        console.warn('R2 storage sync notice during project save:', r2Err);
-      }
+      uploadOriginalFilesBatch(
+        pendingItems,
+        currentProjectId || albumId || 'saved_project',
+        (fileId, r2Url) => {
+          r2UrlsRef.current[fileId] = r2Url;
+          setUploadedFiles((prev) =>
+            prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+          );
+        }
+      ).catch((r2Err) => {
+        console.warn('Background R2 storage sync notice:', r2Err);
+      });
     }
-
-    // 3. Ensure files sent to Supabase have resolved r2Url
-    const itemsWithR2 = targetItems.map((f) => ({
-      ...f,
-      r2Url: f.r2Url || r2UrlsRef.current[f.id] || '',
-    }));
 
     const res = await saveProjectToSupabase({
       projectId: currentProjectId || undefined,

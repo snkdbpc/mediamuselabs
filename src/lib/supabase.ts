@@ -205,9 +205,13 @@ export async function saveProjectToSupabase(
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
     const res = await apiFetch('/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         project_id: payload.projectId,
         user_id: payload.userId,
@@ -232,6 +236,7 @@ export async function saveProjectToSupabase(
         scored_metadata: payload.scoredMetadata || {},
       }),
     });
+    clearTimeout(timeoutId);
 
     let data: any = {};
     try {
@@ -248,6 +253,9 @@ export async function saveProjectToSupabase(
     return { success: true, projectId: data.project_id };
   } catch (err: any) {
     console.error('Backend save project error:', err);
+    if (err.name === 'AbortError') {
+      return { success: false, error: 'Project save request timed out. Please check your network and try again.' };
+    }
     return { success: false, error: err.message || 'Unknown error saving project' };
   }
 }

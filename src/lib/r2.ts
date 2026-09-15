@@ -43,13 +43,17 @@ export async function uploadOriginalFileToR2(
       if (presignData.upload_url && presignData.public_url) {
         // 2. Stream the original file directly to Cloudflare R2 (bypasses backend server completely!)
         try {
+          const directPutController = new AbortController();
+          const directTimeoutId = setTimeout(() => directPutController.abort(), 20000);
           const directPutRes = await fetch(presignData.upload_url, {
             method: 'PUT',
             headers: {
               'Content-Type': contentType,
             },
             body: file,
+            signal: directPutController.signal,
           });
+          clearTimeout(directTimeoutId);
 
           if (directPutRes.ok) {
             return {
@@ -79,10 +83,15 @@ export async function uploadOriginalFileToR2(
     formData.append('albumId', albumId);
     formData.append('originalName', finalName);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
+
     const res = await apiFetch('/storage/r2/upload', {
       method: 'POST',
       body: formData,
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
@@ -124,8 +133,8 @@ export async function uploadOriginalFilesBatch(
 
   if (filesToUpload.length === 0) return results;
 
-  // Upload in parallel with a concurrency pool of 4
-  const CONCURRENCY = 4;
+  // Upload in parallel with a concurrency pool of 2 to avoid network congestion on tunnel
+  const CONCURRENCY = 2;
   const queue = [...filesToUpload];
 
   async function worker() {
