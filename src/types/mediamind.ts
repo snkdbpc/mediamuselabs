@@ -170,6 +170,8 @@ export interface UploadedFileItem {
   included: boolean;
   exif?: ExifInfo;
   r2Url?: string;
+  thumbnailR2Url?: string;
+  r2CompressedUrl?: string;
   r2Status?: 'idle' | 'uploading' | 'success' | 'error';
   r2Error?: string;
 }

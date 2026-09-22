@@ -55,6 +55,7 @@ export default function Home() {
   // Background parallel R2 upload tracking while clustering
   const r2UploadPromiseRef = useRef<Promise<Record<string, string>> | null>(null);
   const r2UrlsRef = useRef<Record<string, string>>({});
+  const r2ThumbUrlsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const email = (googleStatus.email || '').toLowerCase().trim();
@@ -361,7 +362,7 @@ export default function Home() {
       setAlbumId(newAlbumId);
       setIsProjectSaved(false);
 
-      // Start parallel R2 upload of original uncompressed photos concurrently while clustering runs
+      // Start parallel R2 upload of both compressed previews and original photos concurrently while clustering runs
       r2UploadPromiseRef.current = uploadOriginalFilesBatch(
         activeItems,
         newAlbumId,
@@ -369,6 +370,17 @@ export default function Home() {
           r2UrlsRef.current[fileId] = r2Url;
           setUploadedFiles((prev) =>
             prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+          );
+        },
+        undefined,
+        (fileId, thumbUrl) => {
+          r2ThumbUrlsRef.current[fileId] = thumbUrl;
+          setUploadedFiles((prev) =>
+            prev.map((f) =>
+              f.id === fileId
+                ? { ...f, thumbnailR2Url: thumbUrl, r2CompressedUrl: thumbUrl }
+                : f
+            )
           );
         }
       ).catch((r2Err) => {
@@ -568,13 +580,16 @@ export default function Home() {
     // Files still pending upload use the backend album image endpoint or previewUrl as fallback.
     const itemsWithR2 = targetItems.map((f) => {
       const resolvedR2 = f.r2Url || r2UrlsRef.current[f.id];
+      const resolvedThumbR2 = f.thumbnailR2Url || f.r2CompressedUrl || r2ThumbUrlsRef.current[f.id];
       const fallbackUrl = albumId
         ? `/api/v1/albums/${encodeURIComponent(albumId)}/images/${encodeURIComponent(f.originalName || f.name)}`
         : f.previewUrl || '';
       return {
         ...f,
         r2Url: resolvedR2 || fallbackUrl,
-        previewUrl: f.previewUrl || fallbackUrl,
+        thumbnailR2Url: resolvedThumbR2 || fallbackUrl,
+        r2CompressedUrl: resolvedThumbR2 || fallbackUrl,
+        previewUrl: resolvedThumbR2 || f.previewUrl || fallbackUrl,
       };
     });
 
@@ -588,6 +603,17 @@ export default function Home() {
           r2UrlsRef.current[fileId] = r2Url;
           setUploadedFiles((prev) =>
             prev.map((f) => (f.id === fileId ? { ...f, r2Url, r2Status: 'success' } : f))
+          );
+        },
+        undefined,
+        (fileId, thumbUrl) => {
+          r2ThumbUrlsRef.current[fileId] = thumbUrl;
+          setUploadedFiles((prev) =>
+            prev.map((f) =>
+              f.id === fileId
+                ? { ...f, thumbnailR2Url: thumbUrl, r2CompressedUrl: thumbUrl }
+                : f
+            )
           );
         }
       ).catch((r2Err) => {
@@ -658,6 +684,7 @@ export default function Home() {
       // 2. Restore Project State
       r2UploadPromiseRef.current = null;
       r2UrlsRef.current = {};
+      r2ThumbUrlsRef.current = {};
       setCurrentProjectId(data.project.id);
       setCurrentProjectName(data.project.name || '');
       setAlbumId(data.project.id);
@@ -680,6 +707,18 @@ export default function Home() {
     }
   };
 
+  // Open saved projects modal and fetch fresh projects from Supabase
+  const handleOpenSavedProjectsModal = () => {
+    setIsSavedProjectsModalOpen(true);
+    if (supabaseUserId) {
+      setIsLoadingProjects(true);
+      fetchUserProjects(supabaseUserId)
+        .then((projects) => setSavedProjects(projects))
+        .catch((err) => console.error('Error fetching user projects:', err))
+        .finally(() => setIsLoadingProjects(false));
+    }
+  };
+
   // Delete a saved project
   const handleDeleteProject = async (projectId: string) => {
     const ok = await deleteProjectFromSupabase(projectId);
@@ -697,6 +736,7 @@ export default function Home() {
     }
     r2UploadPromiseRef.current = null;
     r2UrlsRef.current = {};
+    r2ThumbUrlsRef.current = {};
     setIsProjectSaved(false);
     setCurrentProjectId(null);
     setCurrentProjectName('');
@@ -775,7 +815,7 @@ export default function Home() {
           googleStatus={googleStatus}
           connectionId={connectionId}
           savedProjectsCount={savedProjects.length}
-          onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
+          onOpenSavedProjectsModal={handleOpenSavedProjectsModal}
           isPro={isPro}
           onDisconnect={handleDisconnectGoogle}
         />
@@ -851,7 +891,7 @@ export default function Home() {
         isPro={isPro}
         savedProjectsCount={savedProjects.length}
         onOpenSavedProjectsModal={
-          googleStatus.connected ? () => setIsSavedProjectsModalOpen(true) : undefined
+          googleStatus.connected ? handleOpenSavedProjectsModal : undefined
         }
       />
 
@@ -884,7 +924,7 @@ export default function Home() {
         postsCount={totalGeneratedPostsCount}
         isPro={isPro}
         savedProjectsCount={savedProjects.length}
-        onOpenSavedProjectsModal={() => setIsSavedProjectsModalOpen(true)}
+        onOpenSavedProjectsModal={handleOpenSavedProjectsModal}
       />
     </div>
   );

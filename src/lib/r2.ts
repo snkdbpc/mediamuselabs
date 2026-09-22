@@ -15,11 +15,12 @@ export const DEFAULT_SCORE_THRESHOLD = 7.0;
  * If direct upload is blocked by bucket CORS policy, automatically falls back
  * to streaming the original uncompressed image through the backend storage endpoint.
  */
-export async function uploadOriginalFileToR2(
+export async function uploadFileToR2(
   file: File,
   albumId = 'default',
-  originalName?: string
-): Promise<{ success: boolean; url?: string; key?: string; error?: string; skipped?: boolean; size?: number; originalName?: string }> {
+  originalName?: string,
+  folder: 'originals' | 'compressed' = 'originals'
+): Promise<{ success: boolean; url?: string; key?: string; error?: string; skipped?: boolean; size?: number; originalName?: string; folder?: string }> {
   const finalName = originalName || file.name;
   const contentType = file.type || 'image/jpeg';
 
@@ -32,6 +33,7 @@ export async function uploadOriginalFileToR2(
         album_id: albumId,
         filename: finalName,
         content_type: contentType,
+        folder,
       }),
     });
 
@@ -41,7 +43,7 @@ export async function uploadOriginalFileToR2(
         return { success: false, skipped: true, error: presignData.error };
       }
       if (presignData.upload_url && presignData.public_url) {
-        // 2. Stream the original file directly to Cloudflare R2 (bypasses backend server completely!)
+        // 2. Stream directly to Cloudflare R2 if CORS allows
         try {
           const directPutController = new AbortController();
           const directTimeoutId = setTimeout(() => directPutController.abort(), 20000);
@@ -62,12 +64,13 @@ export async function uploadOriginalFileToR2(
               key: presignData.key,
               size: file.size,
               originalName: finalName,
+              folder: presignData.folder || folder,
             };
           } else {
             console.warn(`Direct R2 upload returned status ${directPutRes.status}`);
           }
         } catch (directErr: any) {
-          console.warn('Direct browser-to-R2 upload failed (check R2 bucket CORS policy):', directErr);
+          console.warn('Direct browser-to-R2 upload notice (using backend fallback):', directErr);
         }
       }
     }
@@ -75,13 +78,13 @@ export async function uploadOriginalFileToR2(
     console.warn('Presign request notice:', err);
   }
 
-  // 3. Backend upload fallback: If direct browser-to-R2 upload could not complete (e.g. CORS not configured on R2 bucket),
-  // stream the original uncompressed image file via the backend /storage/r2/upload endpoint.
+  // 3. Backend upload fallback
   try {
     const formData = new FormData();
     formData.append('file', file, finalName);
     formData.append('albumId', albumId);
     formData.append('originalName', finalName);
+    formData.append('folder', folder);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 35000);
@@ -108,23 +111,40 @@ export async function uploadOriginalFileToR2(
   }
 }
 
+export async function uploadOriginalFileToR2(
+  file: File,
+  albumId = 'default',
+  originalName?: string
+) {
+  return uploadFileToR2(file, albumId, originalName, 'originals');
+}
+
+export async function uploadCompressedFileToR2(
+  file: File,
+  albumId = 'default',
+  originalName?: string
+) {
+  return uploadFileToR2(file, albumId, originalName, 'compressed');
+}
+
 /**
- * Uploads all original images in parallel to Cloudflare R2 bucket.
+ * Uploads all original images (and their lightweight compressed JPG previews) in parallel to Cloudflare R2 bucket.
  * Bucket credentials are read from server environment variables.
  */
 export async function uploadOriginalFilesBatch(
   files: UploadedFileItem[],
   albumId: string,
   onFileUploaded?: (fileId: string, url: string) => void,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  onThumbnailUploaded?: (fileId: string, url: string) => void
 ): Promise<Record<string, string>> {
   const activeFiles = files.filter((f) => f.included);
   const results: Record<string, string> = {};
   let completed = 0;
   const total = activeFiles.length;
 
-  // Filter for active files that do not yet have an R2 URL
-  const filesToUpload = activeFiles.filter((f) => !f.r2Url);
+  // Filter for active files that still need either original or compressed R2 URL
+  const filesToUpload = activeFiles.filter((f) => !f.r2Url || !f.thumbnailR2Url);
   activeFiles.forEach((f) => {
     if (f.r2Url) {
       results[f.id] = f.r2Url;
@@ -142,25 +162,40 @@ export async function uploadOriginalFilesBatch(
       const item = queue.shift();
       if (!item) break;
 
+      // 1. Upload compressed JPEG image first (small ~100-150KB, finishes almost instantly, used for fast UI loading)
+      if (item.compressedFile && (!item.thumbnailR2Url && !item.r2CompressedUrl)) {
+        const compName = `${item.name.replace(/\.[^/.]+$/, '')}.jpg`;
+        try {
+          const compRes = await uploadCompressedFileToR2(item.compressedFile, albumId, compName);
+          if (compRes.success && compRes.url) {
+            item.thumbnailR2Url = compRes.url;
+            item.r2CompressedUrl = compRes.url;
+            if (onThumbnailUploaded) {
+              onThumbnailUploaded(item.id, compRes.url);
+            }
+          }
+        } catch (compErr) {
+          console.warn(`Compressed thumbnail upload notice for ${item.name}:`, compErr);
+        }
+      }
+
+      // 2. Upload original uncompressed photo
       const fileToUpload = item.originalFile || item.file;
       const fileName = item.originalName || fileToUpload?.name || item.name;
-      if (!fileToUpload) {
-        completed++;
-        continue;
-      }
-      const res = await uploadOriginalFileToR2(fileToUpload, albumId, fileName);
-
-      if (res.success && res.url) {
-        results[item.id] = res.url;
-        item.r2Url = res.url;
-        if (onFileUploaded) {
-          onFileUploaded(item.id, res.url);
+      if (fileToUpload && !item.r2Url) {
+        const res = await uploadOriginalFileToR2(fileToUpload, albumId, fileName);
+        if (res.success && res.url) {
+          results[item.id] = res.url;
+          item.r2Url = res.url;
+          if (onFileUploaded) {
+            onFileUploaded(item.id, res.url);
+          }
+        } else if (res.skipped) {
+          // Environment variables not configured; stop further attempts
+          break;
+        } else {
+          console.warn(`R2 original upload notice for ${item.name}:`, res.error);
         }
-      } else if (res.skipped) {
-        // Environment variables not configured; stop further attempts
-        break;
-      } else {
-        console.warn(`R2 upload notice for ${item.name}:`, res.error);
       }
 
       completed++;

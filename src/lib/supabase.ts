@@ -225,7 +225,8 @@ export async function saveProjectToSupabase(
           size: f.size,
           originalSize: f.originalSize || f.size,
           r2Url: f.r2Url,
-          previewUrl: f.previewUrl,
+          thumbnailR2Url: f.thumbnailR2Url || f.r2CompressedUrl || '',
+          previewUrl: f.thumbnailR2Url || f.r2CompressedUrl || f.previewUrl,
           included: f.included,
           mime_type: f.file?.type || 'image/jpeg',
           exif: f.exif || {},
@@ -319,10 +320,11 @@ export async function loadProjectFromSupabase(
     const loaded = data.projectData;
     if (!loaded) return null;
 
-    // Convert media rows to UploadedFileItem with browser-safe preview URLs
+    // Convert media rows to UploadedFileItem with browser-safe preview URLs (preferring compressed JPG thumbnails!)
     const reconstructedFiles: UploadedFileItem[] = (loaded.media || []).map((m: any, idx: number) => {
-      const rawUrl = m.previewUrl || m.r2Url || '';
-      const safePreview = getDisplayPreviewUrl(rawUrl, m.originalName || m.name);
+      const thumbUrl = m.thumbnailR2Url || m.r2CompressedUrl || m.previewUrl || '';
+      const origUrl = m.r2Url || '';
+      const safePreview = getDisplayPreviewUrl(thumbUrl || origUrl, m.originalName || m.name);
 
       return {
         id: m.id || `media_${Date.now()}_${idx}`,
@@ -331,8 +333,10 @@ export async function loadProjectFromSupabase(
         size: Number(m.size) || 0,
         originalSize: Number(m.originalSize || m.size) || 0,
         previewUrl: safePreview,
-        r2Url: m.r2Url || undefined,
-        r2Status: 'success',
+        r2Url: origUrl || undefined,
+        thumbnailR2Url: thumbUrl || undefined,
+        r2CompressedUrl: thumbUrl || undefined,
+        r2Status: (origUrl || thumbUrl) ? 'success' : 'idle',
         included: m.included !== false,
         exif: m.exif || {},
         file: new File([], m.name, { type: 'image/jpeg' }),
